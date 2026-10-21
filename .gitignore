@@ -1,0 +1,29 @@
+# Data and secrets: these live on each machine and never go to GitHub
+data.json
+data.json.*
+new-recipes.json
+users.json
+profiles/
+images/
+backups/
+.backup-*/
+.env
+*.env
+*.log
+
+# Local-only folders
+compare/
+Claude outputs/
+
+# Junk
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+.claude/skills/robot-art/scenes/out/
+
+# Local notes and one-off scripts
+HANDOFF.md
+merge_recipes.py
+*.bak-*
+mirror/
