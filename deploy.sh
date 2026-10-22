@@ -8,6 +8,7 @@
 # restart, the previous version is put back. A bad commit is remembered and not retried.
 set -u
 cd "$(dirname "$0")"
+HERE="$(pwd)"
 PORT="${DEPLOY_PORT:-6969}"   # the port the live server listens on
 log(){ echo "$(date '+%F %T') $*"; }
 
@@ -51,9 +52,10 @@ restart(){
   elif systemctl cat meal-planner >/dev/null 2>&1; then
     sudo -n systemctl restart meal-planner
   else
-    pkill -f "python3? .*server\.py" ; sleep 1
-    if [ -x ./start.sh ]; then nohup ./start.sh >> server.log 2>&1 &
-    else nohup python3 server.py "$PORT" >> server.log 2>&1 &
+    # stop only this folder's server (matched by its full path), never other Python programs
+    pkill -f "[Pp]ython[^ ]* $HERE/server\.py" 2>/dev/null; sleep 1
+    if [ -f ./start.sh ]; then nohup sh ./start.sh >> server.log 2>&1 &
+    else nohup python3 "$HERE/server.py" "$PORT" >> server.log 2>&1 &
     fi
   fi
 }
