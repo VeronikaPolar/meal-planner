@@ -4110,6 +4110,12 @@ function addTargetHtml(){
   </div>`;
 }
 function addRecipeToWeek(meal,rid){
+  // Opened from Suggest: add it to the plate being suggested for, then close it and go back to the other ideas.
+  if(planSheetId===rid&&suggestDraft&&(suggestDraft.options||[]).some(o=>o.recipe&&o.recipe.id===rid)){
+    const forSlot=addSheet&&addSheet.slot&&(addSheet.slot===meal||slotMeal(addSheet.slot)===meal)?addSheet.slot:(!isDaily()?meal:null);
+    const w0=getWeek();
+    if(forSlot&&w0&&w0.weekOf===suggestDraft.weekOf){planSheetId=null;planSheetPeople=null;acceptSuggest(forSlot,rid);return}
+  }
   const tp=targetPlate(meal);const slot=tp.slot;
   const w=weekForCookDay(tp.weekOf,true);const r=S.recipes.find(x=>x.id===rid);
   if(!w||!r||!isSlot(slot))return;
