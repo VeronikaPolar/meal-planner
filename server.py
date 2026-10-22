@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Tiny meal planner server. No dependencies. Usage: python3 server.py [port]"""
-import base64, hashlib, hmac, html, json, mimetypes, os, re, secrets, ssl, sys, tempfile, threading, time
+import base64, gzip, hashlib, hmac, html, json, mimetypes, os, re, secrets, ssl, sys, tempfile, threading, time
 import urllib.request, urllib.error, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -32,6 +32,7 @@ IMAGES = os.path.join(HERE, "images")
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 6969
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
 IMG_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
+_GZIP_TYPES = {"text/html", "application/json", "text/plain", "text/css", "application/javascript", "application/manifest+json", "image/svg+xml"}
 MAX_IMAGE_BYTES = 2_500_000
 COOKIE = "meal_session"
 SESSION_TTL = 30 * 24 * 3600
@@ -830,11 +831,20 @@ def _remove_images_for_id(rid):
     return removed
 
 class H(BaseHTTPRequestHandler):
-    def _send(self, code, body, ctype="application/json", extra=None):
+    def _send(self, code, body, ctype="application/json", extra=None, cache="no-store"):
+        # Text compresses to about a third; images are already compressed.
+        gz = (len(body) > 1400 and ctype.split(";")[0] in _GZIP_TYPES
+              and "gzip" in (self.headers.get("Accept-Encoding") or ""))
+        if gz:
+            body = gzip.compress(body, 6)
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
+        if ctype.split(";")[0] in _GZIP_TYPES:
+            self.send_header("Vary", "Accept-Encoding")
+        if gz:
+            self.send_header("Content-Encoding", "gzip")
         for k, v in (extra or []):
             self.send_header(k, v)
         self.end_headers()
@@ -1169,10 +1179,10 @@ class H(BaseHTTPRequestHandler):
             return
         if path == "/manifest.webmanifest":
             return self._send(200, _MANIFEST, "application/manifest+json",
-                              extra=[("Cache-Control", "public, max-age=86400")])
+                              cache="public, max-age=86400")
         if path.lstrip("/") in _ICONS:
             return self._send(200, base64.b64decode(_ICONS[path.lstrip("/")]), "image/png",
-                              extra=[("Cache-Control", "public, max-age=604800")])
+                              cache="public, max-age=604800")
         if path in ("/", "/index.html"):
             page = open(os.path.join(HERE, "index.html"), "rb").read()
             email, name, slug = self._who()
@@ -1182,7 +1192,15 @@ class H(BaseHTTPRequestHandler):
             boot = ("<script>window.MP_PROFILE=" + js(slug) + ";window.MP_USER=" + js(name) +
                     ";window.MP_GUEST=" + ("true" if self._is_guest() else "false") + ";</script>").encode("utf-8")
             page = page.replace(b"<head>", b"<head>" + boot, 1)
-            return self._send(200, page, "text/html; charset=utf-8")
+            # The browser keeps the page and asks each visit whether it changed (304 = reuse it).
+            etag = '"' + hashlib.sha256(page).hexdigest()[:20] + '"'
+            if etag in (self.headers.get("If-None-Match") or ""):
+                self.send_response(304)
+                self.send_header("ETag", etag)
+                self.send_header("Cache-Control", "private, no-cache")
+                self.end_headers()
+                return
+            return self._send(200, page, "text/html; charset=utf-8", extra=[("ETag", etag)], cache="private, no-cache")
         self._send(404, b"not found", "text/plain")
 
     def do_POST(self):

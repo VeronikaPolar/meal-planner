@@ -27,3 +27,4 @@ HANDOFF.md
 merge_recipes.py
 *.bak-*
 mirror/
+.deploy-bad

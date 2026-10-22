@@ -3384,13 +3384,29 @@ body.onb-open{overflow:hidden}
 .prof-top{display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:12px}
 .prof-top .av-edit{flex-direction:column;align-items:center}
 .prof-name{margin:0;text-align:center}
+.head-actions{position:relative}
+.me-avatar{width:36px;height:36px}
+.me-avatar[aria-expanded="true"]{border-color:var(--acc)}
+.acct-menu{position:absolute;top:calc(100% + 8px);right:0;z-index:60;width:min(260px,calc(100vw - 24px));padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--card);box-shadow:0 16px 40px rgba(0,0,0,.5)}
+.acct-menu[hidden]{display:none}
+.acct-who{display:flex;align-items:center;gap:10px;padding:8px 8px 10px;border-bottom:1px solid var(--line);margin-bottom:4px}
+.acct-pic{width:40px;height:40px;border-radius:50%;overflow:hidden;flex:none;border:1px solid var(--line)}
+.acct-pic .av-svg,.acct-pic .av-photo{width:100%;height:100%;display:block;object-fit:cover}
+.acct-who b{display:block;font:600 14px/1.2 var(--sans);color:var(--ink)}
+.acct-who b+span{display:block;font:12px/1.35 var(--sans);color:var(--mute);margin-top:2px}
+.acct-mi{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;text-align:left;padding:10px;min-height:40px;border:0;border-radius:8px;background:none;color:var(--ink);font:500 13px/1.2 var(--sans);cursor:pointer}
+.acct-mi:hover,.acct-mi:focus-visible{background:rgba(238,233,223,.08);outline:none}
+.acct-mi:disabled{color:var(--mute);cursor:default;background:none}
+.acct-state{color:var(--mute);font:500 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase}
+.acct-sep{height:1px;background:var(--line);margin:4px 2px}
+@media (max-width:699px){.me-avatar{width:44px;height:44px}}
 </style>
 </head>
 <body>
 <div class="bg-blobs" aria-hidden="true"><div class="bg-blob b1"></div><div class="bg-blob b2"></div><div class="bg-blob b3"></div><div class="bg-blob b4"></div></div>
 <header class="app-head">
 <h1><svg class="brand-mark" viewBox="0 0 36 36" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false"><path fill="currentColor" opacity=".32" d="M9 11h8.2l1.4 1.5H33v14.5H9z"/><path fill="currentColor" opacity=".58" d="M5 6.5h8.2l1.4 1.5H29v14.5H5z"/><path fill="currentColor" d="M1 2h8.2l1.4 1.5H25v14.5H1z"/><path fill="#1C1C1C" opacity=".35" d="M1 2h8.2l1.4 1.5H1z"/></svg><span>Meal Planner</span></h1>
-<div class="head-actions"><span class="who-am-i" id="whoAmI" hidden></span><select class="as-sel" id="asSel" hidden aria-label="Whose planner" onchange="asSelChange(this)"></select><button type="button" class="hud-logout" id="logoutBtn" hidden>Log out</button><button type="button" class="me-avatar" id="meAvatar" aria-label="Profile" onclick="openProfile()"></button><button type="button" class="sound-mute pref-btn" id="prefBtn" aria-label="Settings" onclick="openOnb('edit')"><span class="pref-lab">Settings</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button><button type="button" class="sound-mute" id="soundMute" aria-label="Mute UI sounds and haptics" aria-pressed="false"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M11 5L6 9H3v6h3l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M18.07 5.93a9 9 0 0 1 0 12.14"/></svg></button></div>
+<div class="head-actions"><select class="as-sel" id="asSel" hidden aria-label="Whose planner" onchange="asSelChange(this)"></select><button type="button" class="hud-logout" id="logoutBtn" hidden>Log out</button><button type="button" class="me-avatar" id="meAvatar" aria-label="Account menu" aria-haspopup="menu" aria-expanded="false" onclick="event.stopPropagation();toggleAcctMenu()"></button><div class="acct-menu" id="acctMenu" role="menu" hidden></div></div>
 </header>
 <nav id="nav"></nav>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs><pattern id="av-dots" width="4.2" height="4.2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><circle cx="2.1" cy="2.1" r="1.05" fill="#EEE9DE"/></pattern></defs></svg>
@@ -3718,7 +3734,43 @@ async function uploadAvatarPhoto(input){
   }catch(e){showToast(String(e&&e.message||e||'Upload failed'));syncAvatarViews()}
   finally{if(input)input.value=''}
 }
-/* ---------- Profile page: opened from the picture in the header ---------- */
+/* ---------- account menu: everything about you sits behind your picture ---------- */
+function acctStatus(){
+  const a=typeof _authInfo!=='undefined'&&_authInfo||{};
+  if(window.MP_GUEST)return 'Changes stay in this browser';
+  if(MP_AS)return 'Viewing '+asName()+'’s planner';
+  return a.required?'Signed in':'This device';
+}
+function syncAcctMenu(){
+  const m=document.getElementById('acctMenu'),b=document.getElementById('meAvatar');if(!m||!b)return;
+  b.setAttribute('aria-expanded',m.hidden?'false':'true');
+  if(m.hidden){m.innerHTML='';return}
+  const keep=document.activeElement&&document.activeElement.classList.contains('acct-toggle');
+  const a=typeof _authInfo!=='undefined'&&_authInfo||{};
+  const quiet=soundPrefersQuiet();
+  const sound=quiet?'Off (reduced motion)':S.soundMuted?'Off':'On';
+  const end=window.MP_GUEST?`<button type="button" class="acct-mi" role="menuitem" onclick="closeAcctMenu();openSignIn('')">Sign in</button>`
+    :a.required?`<button type="button" class="acct-mi" role="menuitem" onclick="closeAcctMenu();logout()">Log out</button>`:'';
+  m.innerHTML=`<div class="acct-who"><span class="acct-pic">${avatarPicHtml(40)}</span><span><b>${esc(profileName())}</b><span>${esc(acctStatus())}</span></span></div>
+    <button type="button" class="acct-mi" role="menuitem" onclick="closeAcctMenu();openProfile()">Profile</button>
+    <button type="button" class="acct-mi" role="menuitem" onclick="closeAcctMenu();openOnb('edit')">Settings</button>
+    <button type="button" class="acct-mi acct-toggle" role="menuitemcheckbox" aria-checked="${!S.soundMuted&&!quiet}" onclick="event.stopPropagation();toggleSoundMute()"${quiet?' disabled':''}><span>Sounds</span><span class="acct-state">${sound}</span></button>
+    ${end?`<div class="acct-sep" role="separator"></div>${end}`:''}`;
+  if(keep){const t=m.querySelector('.acct-toggle');if(t)t.focus()}
+}
+function toggleAcctMenu(){const m=document.getElementById('acctMenu');if(!m)return;m.hidden=!m.hidden;syncAcctMenu();if(!m.hidden){const f=m.querySelector('.acct-mi');if(f)f.focus()}}
+function closeAcctMenu(){const m=document.getElementById('acctMenu');if(!m||m.hidden)return;m.hidden=true;syncAcctMenu()}
+document.addEventListener('click',e=>{if(!e.target.closest('#acctMenu')&&!e.target.closest('#meAvatar'))closeAcctMenu()});
+document.addEventListener('keydown',e=>{
+  const m=document.getElementById('acctMenu');if(!m||m.hidden)return;
+  if(e.key==='Escape'){closeAcctMenu();document.getElementById('meAvatar').focus();return}
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+    const items=[...m.querySelectorAll('.acct-mi:not([disabled])')];if(!items.length)return;
+    const i=items.indexOf(document.activeElement);e.preventDefault();
+    items[(i+(e.key==='ArrowDown'?1:-1)+items.length)%items.length].focus();
+  }
+});
+/* ---------- Profile page: opened from the account menu ---------- */
 let profileOpen=false;
 function profileName(){
   if(MP_AS)return asName();
@@ -3802,7 +3854,7 @@ function toggleSoundMute(){
   S.soundMuted=!S.soundMuted;
   persistSoundPref();
   lsSet();
-  syncMuteBtn();
+  syncMuteBtn();syncAcctMenu();
   if(!S.soundMuted)playUI('tick');
 }
 function ensureAudio(){
@@ -5485,15 +5537,13 @@ async function setupLogout(){
     const r=await fetch('api/auth');
     if(!r.ok){b.hidden=true;return}
     const j=await r.json();_authInfo=j;
-    b.hidden=!j.required;
+    b.hidden=!j.guest;
     if(j.guest){b.textContent='Sign in';b.dataset.signin='1'}
-    const who=$('#whoAmI');
-    if(who&&j.user){who.textContent=j.user;who.hidden=false}
     MP_PROFILES=Array.isArray(j.profiles)?j.profiles:[];
     if(MP_AS&&(!j.admin||!MP_PROFILES.some(p=>p.slug===MP_AS))){try{localStorage.removeItem('mp_as')}catch(e){}location.reload();return}
     const sel=$('#asSel');
     if(sel&&j.admin&&MP_PROFILES.length){
-      MP_ME=j.user||'Me';syncAsSel();sel.hidden=false;if(who)who.hidden=true;
+      MP_ME=j.user||'Me';syncAsSel();sel.hidden=false;
     }
     render();
   }catch(e){b.hidden=true}
