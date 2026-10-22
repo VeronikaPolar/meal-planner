@@ -28,3 +28,5 @@ merge_recipes.py
 *.bak-*
 mirror/
 .deploy-bad
+.backup-s3-last
+backup.log

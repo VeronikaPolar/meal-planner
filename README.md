@@ -35,6 +35,16 @@ Set these as environment variables, or as `KEY=value` lines in a `.env` file nex
 */5 * * * * ~/meal-planner/deploy.sh >> ~/meal-planner/deploy.log 2>&1
 ```
 
+## Backups
+
+`backup_s3.py` packs `data.json`, `users.json`, `profiles/` and `images/` into one `.tar.gz` and uploads it to an Amazon S3 bucket, but only when something changed. It needs no extra packages. Give it a bucket with versioning on and an access key that may only `s3:PutObject`, then run it from cron:
+
+```
+*/15 * * * * cd ~/meal-planner && set -a && . ~/.config/meal-planner.env && python3 backup_s3.py >> backup.log 2>&1
+```
+
+Settings: `S3_BUCKET`, `S3_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (and optionally `S3_PREFIX`, default `meal-planner`). To restore, download a backup from S3, stop the server and run `tar -xzf <file> -C ~/meal-planner`.
+
 ## The robot
 
 Meet Rennie. He shows up on empty screens and errors, and everyone starts with his face as their profile picture.
