@@ -2680,7 +2680,7 @@ body.cook-open{overflow:hidden}
 .add-sheet{margin-top:10px;border:1px solid var(--amber);border-radius:var(--radius-sm);padding:12px;background:var(--surface)}
 .add-sheet-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
 .add-tabs{display:grid!important;grid-template-columns:repeat(4,1fr);margin-bottom:12px}
-.nr-tabs{grid-template-columns:1fr 1fr}
+.nr-tabs{grid-template-columns:repeat(3,1fr)}
 .add-tabs button{min-height:40px;font-size:11px!important;letter-spacing:.06em}
 .add-sheet .suggest-picker{border:0!important;padding:0!important;margin:0!important;background:none!important}
 .add-sheet .suggest-picker>.hud-stamp{display:none}
@@ -3381,9 +3381,6 @@ body.onb-open{overflow:hidden}
 .av-mi:hover,.av-mi:focus-visible,.av-mi:focus-within{background:rgba(238,233,223,.08)}
 .av-mi:disabled{color:var(--mute);opacity:.5;cursor:default;background:none}
 .av-mi input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
-.prof-top{display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:12px}
-.prof-top .av-edit{flex-direction:column;align-items:center}
-.prof-name{margin:0;text-align:center}
 .head-actions{position:relative}
 .me-avatar{width:36px;height:36px}
 .me-avatar[aria-expanded="true"]{border-color:var(--acc)}
@@ -3400,6 +3397,16 @@ body.onb-open{overflow:hidden}
 .acct-state{color:var(--mute);font:500 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase}
 .acct-sep{height:1px;background:var(--line);margin:4px 2px}
 @media (max-width:699px){.me-avatar{width:44px;height:44px}}
+.bulk-list{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+.bulk-row{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+.bulk-mark{flex:none;width:16px;text-align:center;font:700 13px/1.4 var(--mono);color:var(--mute)}
+.bulk-row.ok .bulk-mark{color:var(--ok)}.bulk-row.fail .bulk-mark{color:var(--warn,#D08368)}.bulk-row.busy .bulk-mark{color:var(--acc)}
+.bulk-what{display:flex;flex-direction:column;gap:2px;min-width:0}
+.bulk-src{font:12px/1.4 var(--mono);color:var(--mute);overflow-wrap:anywhere}
+.bulk-what>span:last-child{font:13px/1.4 var(--sans);color:var(--ink)}
+.bulk-row.fail .bulk-what>span:last-child{color:var(--warn,#D08368)}
+.bulk-open{text-align:left;padding:0;font:600 13px/1.4 var(--sans)!important;text-transform:none!important;letter-spacing:0!important;text-decoration:none}
+.bulk-sum{margin-top:10px;font-size:12px}
 </style>
 </head>
 <body>
@@ -3682,7 +3689,7 @@ function avatarPicHtml(size){
   return a.photo?`<img class="av-photo" src="${esc(a.photo)}" alt="" width="${size}" height="${size}">`:avatarSvg(a,size);
 }
 function syncMeAvatar(){const b=document.getElementById('meAvatar');if(!b)return;const key=JSON.stringify(avatarOf());if(b.dataset.k!==key){b.dataset.k=key;b.innerHTML=avatarPicHtml(30)}}
-/* Where the pencil menu / robot picker is open: 'profile' | 'settings' | null */
+/* Where the pencil menu / robot picker is open: 'settings' | null */
 let avMenu=null,avPick=null;
 /** Big picture with a pencil in the top-right corner; the pencil opens Upload photo / Pick a robot / Remove. */
 function avatarEditHtml(where){
@@ -3698,7 +3705,7 @@ function avatarEditHtml(where){
     <button type="button" class="av-pencil" aria-label="Change picture" aria-haspopup="menu" aria-expanded="${avMenu===where}" onclick="event.stopPropagation();avMenu=avMenu==='${where}'?null:'${where}';syncAvatarViews()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 20l4.5-1 10-10a2.1 2.1 0 0 0-3-3l-10 10L4 20z"/><path d="M14 7l3 3"/></svg></button>
     ${menu}</div>${picker}</div>`;
 }
-function syncAvatarViews(){syncMeAvatar();if(onb)syncOnb();syncProfile();const m=avMenu&&document.querySelector('.av-menu');if(m)m.scrollIntoView({block:'nearest'})}
+function syncAvatarViews(){syncMeAvatar();if(onb)syncOnb();const m=avMenu&&document.querySelector('.av-menu');if(m)m.scrollIntoView({block:'nearest'})}
 function saveAvatar(next){
   if(next)S.prefs={...(S.prefs||{}),avatar:next};
   else if(S.prefs){const{avatar,...rest}=S.prefs;S.prefs=rest}
@@ -3752,7 +3759,6 @@ function syncAcctMenu(){
   const end=window.MP_GUEST?`<button type="button" class="acct-mi" role="menuitem" onclick="closeAcctMenu();openSignIn('')">Sign in</button>`
     :a.required?`<button type="button" class="acct-mi" role="menuitem" onclick="closeAcctMenu();logout()">Log out</button>`:'';
   m.innerHTML=`<div class="acct-who"><span class="acct-pic">${avatarPicHtml(40)}</span><span><b>${esc(profileName())}</b><span>${esc(acctStatus())}</span></span></div>
-    <button type="button" class="acct-mi" role="menuitem" onclick="closeAcctMenu();openProfile()">Profile</button>
     <button type="button" class="acct-mi" role="menuitem" onclick="closeAcctMenu();openOnb('edit')">Settings</button>
     <button type="button" class="acct-mi acct-toggle" role="menuitemcheckbox" aria-checked="${!S.soundMuted&&!quiet}" onclick="event.stopPropagation();toggleSoundMute()"${quiet?' disabled':''}><span>Sounds</span><span class="acct-state">${sound}</span></button>
     ${end?`<div class="acct-sep" role="separator"></div>${end}`:''}`;
@@ -3770,28 +3776,14 @@ document.addEventListener('keydown',e=>{
     items[(i+(e.key==='ArrowDown'?1:-1)+items.length)%items.length].focus();
   }
 });
-/* ---------- Profile page: opened from the account menu ---------- */
-let profileOpen=false;
+/* Name shown in the account menu. */
 function profileName(){
   if(MP_AS)return asName();
   const a=typeof _authInfo!=='undefined'&&_authInfo;
   return (a&&a.user)||(window.MP_GUEST?'Guest':'You');
 }
-function openProfile(){profileOpen=true;avMenu=null;avPick=null;document.body.classList.add('onb-open');syncProfile()}
-function closeProfile(){profileOpen=false;avMenu=null;avPick=null;document.body.classList.remove('onb-open');syncProfile()}
-function syncProfile(){
-  let box=document.getElementById('profile');
-  if(!profileOpen){if(box){box.hidden=true;box.innerHTML=''}return}
-  if(!box){box=document.createElement('div');box.id='profile';box.className='onb profile';document.body.appendChild(box)}
-  box.hidden=false;
-  box.innerHTML=`<div class="onb-back" onclick="closeProfile()" aria-hidden="true"></div><div class="onb-shell" role="dialog" aria-modal="true" aria-label="Profile">
-    <div class="onb-head"><span class="onb-k">Profile</span><button type="button" class="btn sm ghost onb-x" onclick="closeProfile()" aria-label="Close">×</button></div>
-    <div class="onb-body"><div class="prof-top">${avatarEditHtml('profile')}<h2 class="prof-name">${esc(profileName())}</h2></div></div>
-    <div class="onb-foot"><button type="button" class="btn ghost" onclick="closeProfile()">Close</button><button type="button" class="btn onb-next" onclick="closeProfile();openOnb('edit')">Settings</button></div>
-  </div>`;
-}
 document.addEventListener('click',e=>{if(avMenu&&!e.target.closest('.av-menu')&&!e.target.closest('.av-pencil')){avMenu=null;syncAvatarViews()}});
-document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(avMenu){avMenu=null;syncAvatarViews()}else if(profileOpen)closeProfile()});
+document.addEventListener('keydown',e=>{if(e.key!=='Escape')return;if(avMenu){avMenu=null;syncAvatarViews()}});
 function errStateHtml(title,detail,retry,opts){
   const o=opts||{};
   return `<div class="err-state${o.compact?' compact':''}" role="alert"><img class="err-art" src="${(o.art||{}).src||ERR_ART}" alt="" width="${(o.art||{}).w||371}" height="${(o.art||{}).h||360}"><div class="err-copy"><div class="err-title">${esc(title)}</div>${detail?`<div class="err-detail">${esc(detail)}</div>`:''}<div class="row err-actions">${retry?`<button class="btn sm" type="button" onclick="${retry}">Try again</button>`:''}${o.dismiss?`<button class="btn sm ghost" type="button" onclick="${o.dismiss}">Dismiss</button>`:''}</div></div></div>`;
@@ -5240,7 +5232,7 @@ function onbChoice(on,click,title,desc){
 function onbChip(on,click,label,cls){return `<button type="button" class="onb-chip${on?' on':''}${cls?' '+cls:''}" aria-pressed="${on}" onclick="${click}">${label}</button>`}
 function onbStepHtml(id){
   const d=onb.d;const who=onbWho();
-  if(id==='avatar')return{title:'Profile picture',sub:'Tap the pencil to upload a photo or pick a robot. Changes save right away.',body:avatarEditHtml('settings')};
+  if(id==='avatar')return{title:'Profile',sub:'Your picture in the top bar. Tap the pencil to upload a photo or pick a robot; changes save right away.',body:avatarEditHtml('settings')};
   const you=who?esc(who):'you';const your=who?esc(who)+'’s':'your';
   const W=esc(who);
   if(id==='welcome'){
@@ -5374,8 +5366,9 @@ function syncOnb(){
     ?(()=>{const x=onbStepHtml(onb.only);return `<h2>${x.title}</h2><p class="onb-sub">${x.sub}</p>${x.body}<div class="pref-rerun"><button type="button" class="link-btn" onclick="onb.only=null;syncOnb()">All settings</button></div>`})()
     :edit
     ?`<h2>Settings</h2><p class="onb-sub">Everything that shapes ${onbWho()?esc(onbWho())+'’s':'your'} plan and suggestions. Changes apply when you save.</p>`
+      +(()=>{const x=onbStepHtml('avatar');return `<section class="pref-sec"><h3>${x.title}</h3><p class="onb-sub">${x.sub}</p>${x.body}</section>`})()
       +`<section class="pref-sec"><h3>Start from a style</h3><p class="onb-sub">Fills in the sections below; people, likes and diet stay as they are.</p><div class="ps-mini">${PERSONAS.filter(x=>x.set).map(x=>`<button type="button" class="ps-chip${onb.d.persona===x.id?' on':''}" onclick="onbPersona('${x.id}')">${x.icon}<span>${x.title}</span></button>`).join('')}</div></section>`
-      +q.map(k=>{const x=onbStepHtml(k);return `<section class="pref-sec"><h3>${x.title}</h3><p class="onb-sub">${x.sub}</p>${x.body}</section>`}).join('')
+      +q.filter(k=>k!=='avatar').map(k=>{const x=onbStepHtml(k);return `<section class="pref-sec"><h3>${x.title}</h3><p class="onb-sub">${x.sub}</p>${x.body}</section>`}).join('')
       +`<div class="pref-rerun"><button type="button" class="link-btn" onclick="closeOnb();openOnb('start');onb.rerun=true;syncOnb()">Run the setup questions again</button></div>`
     :`<h2>${st.title}</h2>${st.sub?`<p class="onb-sub">${st.sub}</p>`:''}${['portions','time'].includes(id)?`<p class="onb-pre">${onb.d.persona&&onb.d.persona!=='custom'?`Filled in from “${esc((PERSONAS.find(x=>x.id===onb.d.persona)||{}).title||'')}”`:'Pre-filled with the most common choice'} — change anything that doesn’t fit.</p>`:''}${st.body}${id!=='welcome'&&id!=='done'&&onb.d.persona&&onb.d.persona!=='custom'?`<div class="onb-toend"><button type="button" class="link-btn" onclick="onbToEnd()">Looks right — show me my plan</button></div>`:''}`;
   const who=onbWho();
@@ -5963,6 +5956,36 @@ function keywordMatch(r,tokens){
   return{score,strong,ingHit,hits,weakHits};
 }
 /** Three recipe picks for the active week. Keywords (optional) narrow and rank them. */
+/** The starch a recipe is built on (pasta, grain, potato), or '' for veg-based and untagged dishes. */
+function carbOf(r){
+  if(!r)return '';
+  const saved=(recipeSavedTagGroups(r).carb||[]).filter(c=>c!=='veg');
+  if(saved.length)return saved[0];
+  const inf=(recipeInferredTagGroups(r).carb||[]).filter(c=>c!=='veg');
+  return inf[0]||'';
+}
+/** Carbs already on the plates a new pick should not repeat: the whole week for batch planners,
+    the same day and the days either side for daily ones. Returns [{carb, sl}]. */
+function plannedCarbs(w,forSlot){
+  const d=forSlot!=null?slotDay(forSlot):null;
+  const out=[];
+  slotsOf(w).forEach(sl=>{
+    if(sl==='shop')return;
+    if(d!=null){const sd=slotDay(sl);if(sd==null||Math.abs(sd-d)>1)return}
+    ((w[sl]&&w[sl].items)||[]).forEach(it=>{const x=it&&it.rid&&S.recipes.find(y=>y.id===it.rid);const c=carbOf(x);if(c)out.push({carb:c,sl})});
+  });
+  return out;
+}
+/** Suggestions shown in the last 2 days (this device), so pressing Suggest again brings new ideas. */
+const SUGG_SEEN_KEY='mealplanner-suggest-seen',SUGG_SEEN_MS=2*24*3600*1000;
+function suggestSeenRead(){try{const m=JSON.parse(localStorage.getItem(SUGG_SEEN_KEY)||'{}');return m&&typeof m==='object'?m:{}}catch(e){return {}}}
+function suggestSkipped(){const now=Date.now(),m=suggestSeenRead();return new Set(Object.keys(m).filter(id=>now-m[id]<SUGG_SEEN_MS))}
+function suggestRemember(ids){
+  const now=Date.now(),m=suggestSeenRead();
+  Object.keys(m).forEach(id=>{if(!(now-m[id]<SUGG_SEEN_MS))delete m[id]});
+  ids.forEach(id=>{m[id]=now});
+  try{localStorage.setItem(SUGG_SEEN_KEY,JSON.stringify(m))}catch(e){}
+}
 function suggest(more){
   const w=getWeek();if(!w)return;
   const q=String(suggestQuery||'').trim();
@@ -5985,7 +6008,7 @@ function suggest(more){
     const kw=semMap?(km.strong*3+km.hits.length*15+km.ingHit*6+(km.score-km.strong)*0.5):(km.score*3+(km.hits.length+km.weakHits.length)*20);
     const shown=semMap&&!km.ingHit?km.hits:km.hits.concat(km.weakHits.filter(t=>!km.hits.includes(t)));
     const match=semMap?(km.strong>0||km.ingHit>0||close||(km.score>0&&sim>=semThr*0.85)):km.score>0;
-    return{recipe:r,kind:meatKind(r),cuisine:cuisineFromRecipe(r),sc:sc.sc+kw+(semMap?sim*60:0),km,match,
+    return{recipe:r,kind:meatKind(r),cuisine:cuisineFromRecipe(r),carb:carbOf(r),sc:sc.sc+kw+(semMap?sim*60:0),km,match,
       why:shown.length?('matches '+shown.join(', ')+(sc.why?' · '+sc.why:'')):(close||match)&&semMap?('close to “'+q+'”'+(sc.why?' · '+sc.why:'')):sc.why};
   });
   let note='';
@@ -6000,8 +6023,15 @@ function suggest(more){
   }
   let pool=all.filter(p=>!suggestShown.has(p.recipe.id));
   if(pool.length<Math.min(3,all.length)){suggestShown=new Set();pool=all}
+  // Good fits score within a point of each other, so without this the same recipe always leads.
+  // A small shuffle rotates them (less when keywords decide), and ideas skipped in the last 2 days step back.
+  const skipped=suggestSkipped();
+  pool.forEach(p=>{p.sc=(p.sc||0)+Math.random()*(tokens.length?0.3:1.2);if(skipped.has(p.recipe.id))p.sc-=1});
   pool.sort((a,b)=>(b.sc||0)-(a.sc||0));
-  // Pick three, nudging away from the same protein or cuisine three times over.
+  // Don't repeat a carb that's already planned (pasta for lunch -> no pasta for dinner), unless that's all there is.
+  const takenCarbs=new Set(plannedCarbs(w,addSheet&&addSheet.slot).map(x=>x.carb));
+  if(takenCarbs.size)pool.forEach(p=>{if(p.carb&&takenCarbs.has(p.carb))p.sc-=3});
+  // Pick three, nudging away from the same protein, carb or cuisine three times over.
   const picks=[];
   while(picks.length<3&&pool.length){
     let bi=0,bs=-1e9;
@@ -6009,12 +6039,14 @@ function suggest(more){
       let s=p.sc;
       if(picks.some(x=>x.kind===p.kind&&p.kind!=='other'))s-=2.5;
       if(p.cuisine&&picks.some(x=>x.cuisine===p.cuisine))s-=1.5;
+      if(p.carb&&picks.some(x=>x.carb===p.carb))s-=2;
       if(s>bs){bs=s;bi=i}
     });
     picks.push(pool.splice(bi,1)[0]);
   }
   if(!picks.length){showToast('No recipes left to suggest for this week.');suggestDraft=null;render();return}
   picks.forEach(p=>suggestShown.add(p.recipe.id));
+  suggestRemember(picks.map(p=>p.recipe.id));
   suggestDraft={weekOf:w.weekOf,options:picks,query:q,note};
   render();
 }
@@ -6067,6 +6099,8 @@ function proteinBalanceHtml(w){
 }
 /** How a pick fits what's already planned this week. */
 function reqFitNote(w,r,prot){
+  const carb=carbOf(r),sameCarb=carb&&plannedCarbs(w,addSheet&&addSheet.slot).find(x=>x.carb===carb);
+  if(sameCarb)return{cls:'warn',text:`Same carb as ${slotWhere(w,sameCarb.sl)} (${carb==='grain'?'rice or grains':carb})`};
   if(!prot)return null;
   const planned=[];slotsOf(w).forEach(sl=>((w[sl]&&w[sl].items)||[]).forEach(it=>{const x=it&&S.recipes.find(y=>y.id===it.rid);if(x&&plannedRecipeRole(x)!=='add-on')planned.push({sl,p:proteinOf(x)})}));
   const same=planned.filter(x=>x.p===prot);
@@ -7797,6 +7831,27 @@ function importCard(){
   <div class="row"><button class="btn" id="impbtn" onclick="importRecipe()">Parse &amp; save</button><span class="mute" id="impst"></span></div>
   ${importError?errStateHtml("Couldn't read that recipe",importError,'importRecipe()',{dismiss:"importError='';render()"}):''}</div>`;
 }
+/** Import one recipe (a link or pasted text) through the assistant. Returns the new recipe, already
+    added to the library; throws with a readable message when it can't. Used by single and bulk import. */
+async function importOne(text,target){
+  const r=await fetch('api/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,provider:chatProvider,cuisines:cuisineList().map(c=>({id:c.id,name:c.name}))})});
+  const j=await r.json();if(!j.recipe)throw new Error(j.error||'No recipe returned');
+  const p=j.recipe;
+  const mapItem=i=>{const parsed=parseIngredientLine([i.qty!=null&&i.qty!==''?i.qty:'',canonUnit(i.unit),stripMetricAsides(i.item)].filter(x=>x!==''&&x!=null).join(' '));if(!parsed||!parsed.item)return null;return{qty:parsed.qty,unit:parsed.unit||'',item:sentenceCaseIngredient(parsed.item),meat:!!i.meat&&ING_MEAT_RE.test(parsed.item)}};
+  const items=(Array.isArray(p.items)?p.items:[]).map(mapItem).filter(Boolean);
+  const sections=(Array.isArray(p.sections)?p.sections:[]).map(s=>({label:String(s&&s.label||'').trim().toUpperCase(),items:(Array.isArray(s&&s.items)?s.items:[]).map(mapItem).filter(Boolean)})).filter(s=>s.label&&s.items.length);
+  if(!items.length)throw new Error('No ingredients found');
+  const src={items,sections,servings:Number(p.servings)||null,meatLbs:Number(p.meatLbs)>0?Number(p.meatLbs):null,meatNote:String(p.meatNote||''),};
+  const b=build(src,target);
+  const nid=uid();const fromLink=((text.match(/https?:\/\/[^\s<>"')]+/i)||[])[0]||'').replace(/[.,;]+$/,'');
+  const rec={id:nid,name:recipeTitle(String(p.name||'Untitled')),tags:canonicalTags(p.tags),ingredients:b.text,
+    steps:(p.steps||[]).map(String),src,targetLbs:src.meatLbs?target:null,servings:b.servings};
+  if(j.source||fromLink)rec.source=j.source||fromLink;
+  if(p.spice!=null&&Number(p.spice)>=0&&Number(p.spice)<=5)rec.spice=Math.round(Number(p.spice));
+  rec.tags=withInferredTags(rec);
+  S.recipes.unshift(rec);
+  return rec;
+}
 async function importRecipe(){
   captureLiveDrafts();
   if(window.MP_GUEST){openSignIn('recipe');return}
@@ -7806,22 +7861,7 @@ async function importRecipe(){
   if(importError){importError='';render()}
   $('#impbtn').disabled=true;$('#impst').textContent=/^\s*https?:\/\//i.test(text)?'Reading the page…':'Parsing…';
   try{
-    const r=await fetch('api/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,provider:chatProvider,cuisines:cuisineList().map(c=>({id:c.id,name:c.name}))})});
-    const j=await r.json();if(!j.recipe)throw new Error(j.error||'No recipe returned');
-    const p=j.recipe;
-    const mapItem=i=>{const parsed=parseIngredientLine([i.qty!=null&&i.qty!==''?i.qty:'',canonUnit(i.unit),stripMetricAsides(i.item)].filter(x=>x!==''&&x!=null).join(' '));if(!parsed||!parsed.item)return null;return{qty:parsed.qty,unit:parsed.unit||'',item:sentenceCaseIngredient(parsed.item),meat:!!i.meat&&ING_MEAT_RE.test(parsed.item)}};
-    const items=(Array.isArray(p.items)?p.items:[]).map(mapItem).filter(Boolean);
-    const sections=(Array.isArray(p.sections)?p.sections:[]).map(s=>({label:String(s&&s.label||'').trim().toUpperCase(),items:(Array.isArray(s&&s.items)?s.items:[]).map(mapItem).filter(Boolean)})).filter(s=>s.label&&s.items.length);
-    if(!items.length)throw new Error('No ingredients found');
-    const src={items,sections,servings:Number(p.servings)||null,meatLbs:Number(p.meatLbs)>0?Number(p.meatLbs):null,meatNote:String(p.meatNote||''),};
-    const b=build(src,target);
-    const nid=uid();const fromLink=((text.match(/https?:\/\/[^\s<>"')]+/i)||[])[0]||'').replace(/[.,;]+$/,'');
-    const rec={id:nid,name:recipeTitle(String(p.name||'Untitled')),tags:canonicalTags(p.tags),ingredients:b.text,
-      steps:(p.steps||[]).map(String),src,targetLbs:src.meatLbs?target:null,servings:b.servings};
-    if(j.source||fromLink)rec.source=j.source||fromLink;
-    if(p.spice!=null&&Number(p.spice)>=0&&Number(p.spice)<=5)rec.spice=Math.round(Number(p.spice));
-    rec.tags=withInferredTags(rec);
-    S.recipes.unshift(rec);
+    const rec=await importOne(text,target);const nid=rec.id;
     archiveOpenId=nid;
     importDraft.text='';
     importDraft.target=String(target);
@@ -7832,6 +7872,75 @@ async function importRecipe(){
     render();
   }
 }
+/* ---------- bulk import: many links or recipe texts in one go ---------- */
+let bulkDraft={text:''},bulkRun=null;
+/** Split the box into recipes: blocks between "---" lines; a block of only links is one recipe per link. */
+function bulkItems(text){
+  const out=[];
+  String(text||'').split(/^\s*-{3,}\s*$/m).map(b=>b.trim()).filter(Boolean).forEach(b=>{
+    const lines=b.split('\n').map(l=>l.trim()).filter(Boolean);
+    if(lines.every(l=>/^https?:\/\/\S+$/i.test(l)))lines.forEach(l=>out.push(l));
+    else out.push(b);
+  });
+  return out;
+}
+function bulkLabel(t){const u=/^https?:\/\/\S+$/i.test(t)?t.replace(/^https?:\/\/(www\.)?/i,''):t.split('\n')[0];return u.length>60?u.slice(0,59)+'…':u}
+function bulkDuplicate(t){
+  if(/^https?:\/\/\S+$/i.test(t)){const u=t.replace(/[.,;]+$/,'').replace(/\/$/,'');return S.recipes.find(r=>r&&r.source&&String(r.source).replace(/\/$/,'')===u)}
+  return null;
+}
+async function bulkImport(){
+  captureLiveDrafts();
+  if(window.MP_GUEST){openSignIn('recipe');return}
+  const items=bulkItems(bulkDraft.text);
+  if(!items.length){showFieldError('bulk','Paste some links or recipes');return}
+  const target=parseFloat(importDraft.target)||S.meatTarget||3;S.meatTarget=target;
+  bulkRun={stop:false,running:true,items:items.map(t=>({text:t,label:bulkLabel(t),status:'wait',msg:''}))};
+  render();
+  for(const it of bulkRun.items){
+    if(bulkRun.stop){it.status='skip';it.msg='Stopped';continue}
+    const dup=bulkDuplicate(it.text);
+    if(dup){it.status='skip';it.msg='Already in your recipes: '+recipeDisplayTitle(dup);it.id=dup.id;render();continue}
+    it.status='busy';render();
+    try{
+      const rec=await importOne(it.text,target);
+      const same=S.recipes.find(r=>r&&r.id!==rec.id&&String(r.name||'').trim().toLowerCase()===String(rec.name||'').trim().toLowerCase());
+      if(same){S.recipes=S.recipes.filter(r=>r.id!==rec.id);it.status='skip';it.msg='Already in your recipes: '+recipeDisplayTitle(same);it.id=same.id}
+      else{it.status='ok';it.msg=recipeDisplayTitle(rec);it.id=rec.id;save()}
+    }catch(e){it.status='fail';it.msg=(e&&e.message&&e.message!=='0')?e.message:'Could not read it'}
+    render();
+  }
+  bulkRun.running=false;
+  const ok=bulkRun.items.filter(x=>x.status==='ok').length;
+  const again=x=>x.status==='fail'||(x.status==='skip'&&x.msg==='Stopped');
+  if(ok)bulkDraft.text=bulkRun.items.filter(again).map(x=>x.text).join('\n---\n');
+  save({flush:true});render();
+  showToast(ok?`Imported ${ok} ${ok===1?'recipe':'recipes'}`:'Nothing imported');
+}
+function bulkHtml(){
+  const run=bulkRun;
+  const n=bulkItems(bulkDraft.text).length;
+  const row=x=>{
+    const mark={wait:'·',busy:'…',ok:'✓',fail:'✕',skip:'–'}[x.status];
+    const main=x.status==='ok'||(x.status==='skip'&&x.id)
+      ?`<button type="button" class="link-btn bulk-open" onclick="openArchive('${esc(x.id)}')">${esc(x.msg)}</button>`
+      :`<span>${esc(x.status==='busy'?(/^https?:/i.test(x.text)?'Reading the page…':'Reading…'):x.status==='wait'?'Waiting':x.msg)}</span>`;
+    return `<li class="bulk-row ${x.status}"><span class="bulk-mark" aria-hidden="true">${mark}</span><span class="bulk-what"><span class="bulk-src">${esc(x.label)}</span>${main}</span></li>`;
+  };
+  const done=run&&!run.running;
+  const counts=run?['ok','skip','fail'].map(k=>[k,run.items.filter(x=>x.status===k).length]):[];
+  return `<div class="tool-body">
+  <textarea id="bulk" style="min-height:120px" placeholder="One link per line&#10;&#10;or paste several recipes, with a line of --- between them" oninput="bulkDraft.text=this.value;const c=document.getElementById('bulkn');if(c)c.textContent=bulkCountText()"${run&&run.running?' disabled':''}>${esc(bulkDraft.text||'')}</textarea>
+  <div class="row"><span class="mute">Scale to</span><input id="tl" type="number" step="0.25" min="0.25" value="${esc(importDraft.target!==''&&importDraft.target!=null?importDraft.target:String(S.meatTarget??3))}" style="width:80px" oninput="importDraft.target=this.value"${run&&run.running?' disabled':''}><span class="mute">lb of meat</span></div>
+  <div class="row">${run&&run.running
+      ?`<button class="btn ghost" type="button" onclick="bulkRun.stop=true;this.disabled=true;this.textContent='Stopping…'">Stop</button><span class="mute">${run.items.filter(x=>x.status!=='wait'&&x.status!=='busy').length} of ${run.items.length} done</span>`
+      :`<button class="btn" id="bulkbtn" type="button" onclick="bulkImport()">Import all</button><span class="mute" id="bulkn">${bulkCountText()}</span>`}</div>
+  ${run?`<ol class="bulk-list">${run.items.map(row).join('')}</ol>`:''}
+  ${done?`<div class="mute bulk-sum">${counts.filter(([,c])=>c).map(([k,c])=>`${c} ${k==='ok'?'imported':k==='skip'?'skipped':'failed'}`).join(' · ')}${ok2(run)?' — the ones not imported yet are back in the box to try again.':''}</div>`:''}
+  </div>`;
+}
+function ok2(run){return run.items.some(x=>x.status==='fail'||(x.status==='skip'&&x.msg==='Stopped'))}
+function bulkCountText(){const n=bulkItems(bulkDraft.text).length;return n?`${n} ${n===1?'recipe':'recipes'} to import`:''}
 function openRescale(id){
   const r=S.recipes.find(x=>x.id===id);if(!r||!r.src)return;
   rescaleOpenId=id;
@@ -9519,11 +9628,11 @@ function viewRecipes(){
     ?`<div class="archive-case"><div class="archive-case-head"><span class="archive-stamp">Recipes</span><span class="archive-count">${filtered.length}</span></div><div class="archive${open?'':' is-collapsed'}" role="navigation" aria-label="Recipe archive"><div class="archive-rail">${rail}</div>${open?folderSheet(open):''}</div></div>`
     :`<div class="archive-case"><div class="archive-case-head"><span class="archive-stamp">Recipes</span><span class="archive-count">0</span></div><div class="folder-empty cased"><div class="hatch-label"><img class="empty-art folder-art" src="${POT_EMPTY_ART}" alt="" width="250" height="285">${q?'No recipes match.':'No recipes match this filter.'}<br><span class="mute" style="color:rgba(168,164,154,.55)">${q?'Try another name.':'Try All, or import / add a recipe.'}</span></div></div></div>`;
   if(importError||String(importDraft.text||'').trim())newRecipeOpen=true;
-  const nrTab=newRecipeTab==='manual'?'manual':'import';
+  const nrTab=newRecipeTab==='manual'?'manual':newRecipeTab==='bulk'?'bulk':'import';
   const tools=!newRecipeOpen?`<div class="rec-top"><button class="btn grow" type="button" onclick="newRecipeOpen=true;focusAfterRender=newRecipeTab==='manual'?'rn':'imp';render()">＋ New recipe</button></div>`:`<div class="card new-recipe">
   <div class="add-sheet-head"><span class="day">New recipe</span><button type="button" class="btn sm ghost" onclick="newRecipeOpen=false;render()">Close</button></div>
-  <div class="seg add-tabs nr-tabs"><button type="button" class="${nrTab==='import'?'on':''}" onclick="newRecipeTab='import';focusAfterRender='imp';render()">Paste &amp; import</button><button type="button" class="${nrTab==='manual'?'on':''}" onclick="startNewRecipe()">Type it in</button></div>
-  ${nrTab==='import'?`<div class="tool-body">
+  <div class="seg add-tabs nr-tabs"><button type="button" class="${nrTab==='import'?'on':''}" onclick="newRecipeTab='import';focusAfterRender='imp';render()">Paste &amp; import</button><button type="button" class="${nrTab==='bulk'?'on':''}" onclick="newRecipeTab='bulk';focusAfterRender='bulk';render()">Several at once</button><button type="button" class="${nrTab==='manual'?'on':''}" onclick="startNewRecipe()">Type it in</button></div>
+  ${nrTab==='bulk'?bulkHtml():nrTab==='import'?`<div class="tool-body">
   <textarea id="imp" style="min-height:88px" placeholder="Paste any recipe text here (website, video description, notes)" oninput="importDraft.text=this.value">${esc(importDraft.text||'')}</textarea>
   <div class="row"><span class="mute">Scale to</span><input id="tl" type="number" step="0.25" min="0.25" value="${esc(importDraft.target!==''&&importDraft.target!=null?importDraft.target:String(S.meatTarget??3))}" style="width:80px" oninput="importDraft.target=this.value"><span class="mute">lb of meat</span></div>
   <div class="row"><button class="btn" id="impbtn" type="button" onclick="importRecipe()">Parse &amp; save</button><span class="mute" id="impst"></span></div>
