@@ -9542,11 +9542,42 @@ function qtyToLbs(qty,unit){
   if(u==='kg')return qty*2.20462;
   return null;
 }
+/* Typical weight of one piece (US grocery sizes) so "4 chicken thighs" counts toward the meat total.
+   First match wins, so specific cuts (bone-in thigh) come before general ones (thigh). */
+const PIECE_LBS=[
+  [/\bwhole chickens?\b/,4],[/\b(rotisserie) chickens?\b/,2.5],
+  [/\b(bone-?in|skin-?on)\b.*\bthighs?\b|\bthighs?\b.*\b(bone-?in|skin-?on)\b/,0.4],[/\bthighs?\b/,0.3],
+  [/\b(bone-?in|split)\b.*\bbreasts?\b/,0.75],[/\btenders?\b|\btenderloins?\b.*chicken|chicken.*\btenderloins?\b/,0.1],[/\bbreasts?\b/,0.5],
+  [/\bleg quarters?\b/,0.6],[/\bdrumsticks?\b/,0.25],[/\blegs?\b/,0.5],[/\bwings?\b|\bwingettes?\b|\bdrumettes?\b/,0.12],
+  [/\bpork tenderloins?\b/,1.25],[/\b(bone-?in)\b.*\bchops?\b/,0.5],[/\blamb chops?\b/,0.2],[/\bchops?\b/,0.4],
+  [/\b(bacon|pancetta)\b.*\b(slices?|strips?|rashers?)\b|\b(slices?|strips?|rashers?)\b.*\bbacon\b|\bbacon\b/,0.06],
+  [/\b(sausages?|links?|bratwursts?|brats?|chorizo|kielbasa|hot dogs?|frankfurters?)\b/,0.25],
+  [/\b(burger )?patt(y|ies)\b/,0.25],[/\bmeatballs?\b/,0.06],
+  [/\b(ribeyes?|rib-eyes?|strip steaks?|ny strips?|t-bones?|porterhouses?)\b/,0.75],[/\bsteaks?\b|\bsirloins?\b|\bfilets? mignon\b/,0.5],
+  [/\bshrimps?\b|\bprawns?\b/,0.05],[/\bscallops?\b/,0.06],
+  [/\bwhole (fish|branzino|trout|snapper|sea bass)\b/,1.25],[/\bfillets?\b|\bfilets?\b|\b(salmon|cod|tilapia|halibut|flounder|haddock|trout|mahi)\b/,0.4]
+];
+/** Pounds per piece for a counted meat ingredient ("4 boneless chicken thighs"), or null if unknown. */
+function pieceLbs(name){
+  const t=String(name||'').toLowerCase();
+  if(/\bboneless\b/.test(t)&&/\bthighs?\b/.test(t))return 0.25;
+  for(const [re,lb] of PIECE_LBS)if(re.test(t))return lb;
+  return null;
+}
+const COUNT_UNITS=new Set(['','each','ea','pc','pcs','piece','pieces','whole','link','links','fillet','fillets','slice','slices','strip','strips','breast','breasts','thigh','thighs','leg','legs','chop','chops','steak','steaks','patty','patties','rasher','rashers']);
+/** Pounds for one ingredient line: weighed amounts as is, counted pieces by their typical weight. */
+function itemLbs(i){
+  const lbs=qtyToLbs(i.qty,i.unit);
+  if(lbs!=null)return lbs;
+  if(i.qty==null||!Number.isFinite(i.qty)||!COUNT_UNITS.has(String(i.unit||'').trim().toLowerCase()))return null;
+  const each=pieceLbs((i.unit||'')+' '+(i.item||''));
+  return each==null?null:i.qty*each;
+}
 function meatLbsFromItems(items){
   let total=0,found=false;
   (items||[]).forEach(i=>{
     if(!i||!i.meat)return;
-    const lbs=qtyToLbs(i.qty,i.unit);
+    const lbs=itemLbs(i);
     if(lbs==null)return;
     total+=lbs;found=true;
   });
