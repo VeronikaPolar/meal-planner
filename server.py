@@ -755,7 +755,15 @@ def ask_model(messages, context, system=None, provider="groq", json_mode=False, 
     key = os.environ.get(key_names[provider])
     if not key:
         return {"error": "The selected chat provider is not configured on the server."}
-    system = system or (SYSTEM + "\n\nUser data:\n" + json.dumps(context)[:8000])
+    if not system:
+        # Recipes the user @-mentioned get their own, larger budget so the general data can't crowd them out.
+        ctx = dict(context) if isinstance(context, dict) else {}
+        mentioned = ctx.pop("mentioned", None) or []
+        system = SYSTEM + "\n\nUser data:\n" + json.dumps(ctx)[:8000]
+        if mentioned:
+            system += ("\n\nRecipes the user mentioned with @ (full details from their library; answer about these exact "
+                       "recipes, quote their real ingredients and steps, and say so if something isn't in the recipe):\n"
+                       + json.dumps(mentioned)[:24000])
     if not isinstance(messages, list):
         messages = []
     msgs = [{"role": m["role"], "content": str(m.get("content", ""))[:max_chars]} for m in messages

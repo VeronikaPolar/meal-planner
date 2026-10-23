@@ -3407,6 +3407,20 @@ body.onb-open{overflow:hidden}
 .bulk-row.fail .bulk-what>span:last-child{color:var(--warn,#D08368)}
 .bulk-open{text-align:left;padding:0;font:600 13px/1.4 var(--sans)!important;text-transform:none!important;letter-spacing:0!important;text-decoration:none}
 .bulk-sum{margin-top:10px;font-size:12px}
+.mention-menu{position:fixed;z-index:80;max-height:300px;overflow-y:auto;padding:4px;border:1px solid var(--line);border-radius:10px;background:var(--card);box-shadow:0 14px 34px rgba(0,0,0,.5)}
+.mention-head{padding:6px 8px 4px;font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mute)}
+.mention-opt{display:flex;width:100%;align-items:center;justify-content:space-between;gap:10px;padding:9px 8px;border:0;border-radius:7px;background:none;color:var(--ink);font:500 13px/1.3 var(--sans);text-align:left;cursor:pointer}
+.mention-opt.on,.mention-opt:hover{background:rgba(238,233,223,.08)}
+.mention-code{flex:none;font:500 11px/1 var(--mono);color:var(--mute)}
+.chat-ref{display:inline;padding:1px 6px;margin:0 1px;border:1px solid rgba(var(--acc-rgb,228,134,47),.5);border-radius:6px;background:rgba(var(--acc-rgb,228,134,47),.12);color:inherit;font:inherit;cursor:pointer}
+.req-results{margin:10px 0 4px}
+.req-results:empty{display:none}
+.req-results-head{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin:0 0 6px}
+.req-hits{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.req-hit{display:grid;grid-template-columns:1fr auto;grid-template-areas:'name add' 'meta add';align-items:center;gap:2px 10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px}
+.req-hit-name{grid-area:name;text-align:left;padding:0;border:0;background:none;color:var(--ink);font:600 14px/1.3 var(--sans);cursor:pointer}
+.req-hit-meta{grid-area:meta;font:11px/1.3 var(--mono);color:var(--mute)}
+.req-hit-add{grid-area:add;display:flex;gap:6px}
 </style>
 </head>
 <body>
@@ -3568,6 +3582,9 @@ function prefBonus(r){
   if(isLater(r.id)){sc+=8;why.unshift('saved for later')}
   else if(isFav(r.id)){sc+=2;why.push('a favorite')}
   if(p.like.protein.some(t=>tags.includes(t))){sc+=2;why.push('a protein you like')}
+  // Loving some proteins means the rest are a "not really": push them well down (outweighs the
+  // spread-the-proteins nudge), but don't hide them the way "never" does.
+  else if(p.like.protein.length){const pr=proteinOf(r);if(PREF_PROTEINS.includes(pr))sc-=4}
   if(p.like.cuisine.some(t=>tags.includes(t))){sc+=1.5;why.push('a cuisine you like')}
   const mins=recipeMinutes(r);
   const T=p.time;
@@ -3971,6 +3988,8 @@ function isDangerControl(el){
 
 const $=s=>document.querySelector(s);
 const uid=()=>Math.random().toString(36).slice(2,9);
+/** Put a new recipe at the front of the library and note when it was added (for "Just added"). */
+function addRecipeFirst(r){if(r&&!r.addedAt)r.addedAt=Date.now();S.recipes.unshift(r);return r}
 const esc=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const today=()=>ymd(new Date());
 
@@ -6110,6 +6129,85 @@ function reqFitNote(w,r,prot){
   if(planned.length)return{cls:'ok',text:`Balances ${planned.map(x=>x.p).filter(Boolean).join(' + ')}`};
   return null;
 }
+/* ---------- search inside Suggest: every word anywhere, plus meaning (on-device model) ---------- */
+/** Recipes matching a typed search, best first. All words in the name/tags beat some words;
+    ingredients count less; the meaning model adds near matches ("chicken pie" -> "Chicken Pot Pie"). */
+function recipeSearch(q,limit){
+  const key=String(q||'').trim().toLowerCase();if(!key)return [];
+  const tokens=requestTokens(key);
+  const sem=SEM.last&&SEM.last.q===key?SEM.last.scores:null;
+  let top=0;if(sem)sem.forEach(v=>{if(v>top)top=v});
+  const thr=sem?Math.max(0.35,top*0.8):Infinity;
+  const words=t=>String(t||'').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const stemOf=t=>t.replace(/(ies)$/,'y').replace(/(es|s)$/,'');
+  const out=[];
+  S.recipes.forEach(r=>{
+    if(!r||!r.name)return;
+    const code=String(recipeCode(r)||'').toLowerCase();
+    const name=words(r.name+' '+(r.funName||'')),ing=new Set(words(r.ingredients).map(stemOf));
+    const tags=new Set(canonicalTags(r.tags));
+    let exact=0,strong=0,weak=0;
+    tokens.forEach(t=>{
+      const st=stemOf(t);
+      const isExact=name.some(w=>w===t||stemOf(w)===st);
+      const isName=isExact||name.some(w=>(st.length>=4&&w.startsWith(st))||(t.length>=5&&editDistance(w,t,1)<=1));
+      const isTag=tokenAliases(t).some(a=>tags.has(a.value));
+      if(isExact)exact++;
+      if(isName||isTag)strong++;
+      else if(ing.has(st))weak++;
+    });
+    const n=tokens.length;
+    const all=n&&strong===n,anywhere=n&&strong+weak===n;
+    const sim=sem?(sem.get(r.id)||0):0,similar=sim>=thr;
+    if(code!==key&&!strong&&!weak&&!similar)return;
+    const tier=code===key?4:all?3:anywhere?2:similar?1.5:1;   // 1 = only some of the words
+    const sc=tier*100+exact*12+strong*10+weak*3+(similar?sim*60:0);
+    const why=code===key?'code':tier>=3?'':tier===2?'in the ingredients':similar&&!strong?'similar':'';
+    out.push({r,sc,tier,why});
+  });
+  // Only fall back to partial matches when nothing matches every word.
+  const best=out.some(x=>x.tier>=2);
+  const shown=best?out.filter(x=>x.tier>=1.5):out;
+  shown.sort((a,b)=>b.sc-a.sc||recipeDisplayTitle(a.r).localeCompare(recipeDisplayTitle(b.r)));
+  return shown.slice(0,limit||8);
+}
+function reqResultsHtml(w,forSlot){
+  const q=String(suggestQuery||'').trim();
+  if(!q||!w)return '';
+  const res=recipeSearch(q,8);
+  const slots=forSlot?[forSlot]:(isDaily()?['lunch','dinner']:plannedSlots(w));
+  const on=(sl,rid)=>((w[sl]&&w[sl].items)||[]).some(i=>i&&i.rid===rid);
+  const rows=res.map(({r,why})=>{
+    const rid=esc(r.id),c=recipeCode(r),prot=proteinOf(r);
+    const btns=slots.map(sl=>on(sl,r.id)?`<button type="button" class="btn sm ghost" disabled>✓ ${slotLabel(sl)}</button>`:`<button type="button" class="btn sm" onclick="searchAdd('${sl}','${rid}')" aria-label="Add ${esc(recipeDisplayTitle(r))} to ${esc(slotWhere(w,sl))}">+ ${slotLabel(sl)}</button>`).join('');
+    return `<li class="req-hit"><button type="button" class="req-hit-name" onclick="openRecipeFromPlan('${rid}')">${esc(recipeDisplayTitle(r))}</button><span class="req-hit-meta">${[c,prot,why].filter(Boolean).map(esc).join(' · ')}</span><span class="req-hit-add">${btns}</span></li>`;
+  }).join('');
+  const loading=SEM.pipe||SEM.failed?'':(SEM.loading?' · finding similar…':'');
+  return `<div class="req-results"><div class="req-results-head">Matching recipes${res.length?'':': none'}${esc(loading)}</div>${rows?`<ol class="req-hits">${rows}</ol>`:''}</div>`;
+}
+let reqSemTimer=null;
+function onReqInput(el,forSlot){
+  suggestQuery=el.value;
+  const box=document.getElementById('req-results'),w=getWeek();
+  if(box)box.innerHTML=reqResultsHtml(w,forSlot||null);
+  clearTimeout(reqSemTimer);
+  const q=el.value.trim();if(!q||SEM.failed)return;
+  reqSemTimer=setTimeout(()=>{semScores(q,8000).then(()=>{if(String(suggestQuery||'').trim()===q){const b=document.getElementById('req-results');if(b)b.innerHTML=reqResultsHtml(getWeek(),forSlot||null)}})},300);
+}
+/** Add a search result to a plate; the panel stays open for more. */
+function searchAdd(slot,rid){
+  const w=getWeek();const r=S.recipes.find(x=>x.id===rid);
+  if(!w||!r||!isSlot(slot))return;
+  const p=ensureSlot(slot);
+  if(p.items.some(i=>i&&i.rid===rid)){showToast('Already on '+slotWhere(w,slot));return}
+  applySuggestPick(w,slot,{recipe:r,why:''});
+  save({flush:true});render();
+  showToast(`Added to ${slotWhere(w,slot)}`,()=>{
+    const w2=(S.weeks||[]).find(x=>x.weekOf===w.weekOf);if(!w2||!w2[slot])return;
+    w2[slot].items=(w2[slot].items||[]).filter(i=>!(i&&i.rid===rid));
+    save({flush:true});render();
+  });
+}
 function suggestPickerHtml(w,forSlot){
   if(forSlot&&(!suggestDraft||!w||suggestDraft.weekOf!==w.weekOf))return `<div class="mute" style="padding:8px 0">Finding three ideas…</div>`;
   if(!suggestDraft||!w||suggestDraft.weekOf!==w.weekOf||!Array.isArray(suggestDraft.options))return '';
@@ -6138,13 +6236,14 @@ function suggestPickerHtml(w,forSlot){
   return `<div class="card suggest-picker" role="region" aria-label="Recipe request">
   <div class="hud-stamp">Recipe request · pick a plate</div>
   <div class="req-search">
-    <input id="req-q" onfocus="semWarm()" placeholder="Keywords or ideas (optional)" value="${esc(suggestQuery||'')}" autocomplete="off" enterkeyhint="search">
+    <input id="req-q" onfocus="semWarm()" placeholder="Search recipes, or describe what you want" value="${esc(suggestQuery||'')}" autocomplete="off" enterkeyhint="search" oninput="onReqInput(this,'${forSlot||''}')">
     <button type="button" class="btn sm btn-suggest" id="reqBtn" onclick="requestRecipes(false)">Suggest <span class="dial" aria-hidden="true"></span></button>
   </div>
+  <div id="req-results">${reqResultsHtml(w,forSlot)}</div>
   ${proteinBalanceHtml(w)}
   ${suggestDraft.note?`<div class="mute req-note">${esc(suggestDraft.note)}</div>`:''}
   <div class="req-grid">${cards}</div>
-  <div class="row suggest-actions"><button type="button" class="btn ghost" onclick="keepSuggesting()">More suggestions</button>${forSlot?'':`<button type="button" class="btn ghost" onclick="cancelSuggest()">Close</button>`}</div>
+  <div class="row suggest-actions"><button type="button" class="btn ghost" onclick="keepSuggesting()">More suggestions</button>${forSlot?`<button type="button" class="btn ghost" onclick="openAddSheet('${forSlot}','new')">＋ New recipe…</button>`:`<button type="button" class="btn ghost" onclick="cancelSuggest()">Close</button>`}</div>
 </div>`;
 }
 function clearActiveWeek(){
@@ -7091,7 +7190,7 @@ function viewPlan(){
     ${draftTagPickerHtml('plannew',planNewDraft.name,planNewDraft.ings)}
     <textarea id="pn-ings" placeholder="Ingredients, one per line (Tab takes a suggestion)" autocapitalize="off" spellcheck="false">${esc(planNewDraft.ings||'')}</textarea>
     <textarea id="pn-steps" class="steps-input" placeholder="Steps, one per line (optional)">${esc(planNewDraft.steps||'')}</textarea>
-    <div class="row"><button class="btn" type="button" onclick="savePlanNew('${slot}')">Save &amp; add</button><button class="btn ghost" type="button" onclick="openAddSheet('${slot}','search')">Back</button></div>
+    <div class="row"><button class="btn" type="button" onclick="savePlanNew('${slot}')">Save &amp; add</button><button class="btn ghost" type="button" onclick="openAddSheet('${slot}','suggest')">Back</button></div>
     </div>`:'';
     const ingForm=planIngSlot===slot?`<div class="plan-new-form">
     <input id="pi-text" placeholder="e.g. 3 lb chicken thighs" enterkeyhint="done" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(planIngDraft.text||'')}">
@@ -7147,6 +7246,7 @@ function openAddSheet(slot,tab){
   wipeIds(['picker-q','pn-name','pn-tags','pn-ings','pi-text','pi-qty','pi-unit']);
   itemMenu=null;planIngEdit=null;cookFormSlot=null;
   tab=tab||(addSheet&&addSheet.slot===slot&&addSheet.tab)||'suggest';
+  if(tab==='search')tab='suggest'; // search lives inside Suggest now
   addSheet={slot,tab};
   planPickerSlot=tab==='search'?slot:null;if(tab!=='search')planPickerQ='';
   planIngSlot=tab==='ingredient'?slot:null;
@@ -7161,7 +7261,7 @@ function openAddSheet(slot,tab){
 function closeAddSheet(){addSheet=null;planPickerSlot=null;planIngSlot=null;planNewSlot=null;planPickerQ='';render()}
 function addSheetHtml(slot,w,picker,newForm,ingForm){
   const t=addSheet.tab;
-  const tab=(k,l)=>`<button type="button" role="tab" aria-selected="${t===k||(k==='search'&&t==='new')}" class="${t===k||(k==='search'&&t==='new')?'on':''}" onclick="openAddSheet('${slot}','${k}')">${l}</button>`;
+  const tab=(k,l)=>`<button type="button" role="tab" aria-selected="${t===k||(k==='suggest'&&t==='new')}" class="${t===k||(k==='suggest'&&t==='new')?'on':''}" onclick="openAddSheet('${slot}','${k}')">${l}</button>`;
   let body='';
   if(t==='suggest')body=suggestPickerHtml(w,slot);
   else if(t==='search')body=picker;
@@ -7174,7 +7274,7 @@ function addSheetHtml(slot,w,picker,newForm,ingForm){
   }
   return `<div class="add-sheet" role="region" aria-label="Add to ${esc(slotWhere(w,slot))}">
     <div class="add-sheet-head"><span class="day">Add to ${esc(slotWhere(w,slot))}</span><button type="button" class="btn sm ghost" onclick="closeAddSheet()">Done</button></div>
-    <div class="seg add-tabs" role="tablist">${tab('suggest','Suggest')}${tab('search','Search')}${tab('meals','Saved plates')}${tab('ingredient','Ingredient')}</div>
+    <div class="seg add-tabs" role="tablist">${tab('suggest','Suggest')}${tab('meals','Saved plates')}${tab('ingredient','Ingredient')}</div>
     <div class="add-sheet-body">${body}</div>
   </div>`;
 }
@@ -7351,7 +7451,7 @@ function savePlanNew(slot){
   const nid=uid();
   const steps=cleanSteps(String(planNewDraft.steps||'').split('\n').map(x=>x.trim()).filter(Boolean));
   const nr={id:nid,name,tags,ingredients,...(steps.length?{steps}:{}),...(planNewDraft.spice!=null?{spice:Number(planNewDraft.spice)}:{})};nr.tags=withInferredTags(nr);
-  S.recipes.unshift(nr);
+  addRecipeFirst(nr);
   wipeIds(['pn-name','pn-tags','pn-ings','pn-steps']);
   planNewSlot=null;planIngSlot=null;addSheet=null;
   planNewDraft={name:'',tags:[],ings:''};
@@ -7849,7 +7949,7 @@ async function importOne(text,target){
   if(j.source||fromLink)rec.source=j.source||fromLink;
   if(p.spice!=null&&Number(p.spice)>=0&&Number(p.spice)<=5)rec.spice=Math.round(Number(p.spice));
   rec.tags=withInferredTags(rec);
-  S.recipes.unshift(rec);
+  addRecipeFirst(rec);
   return rec;
 }
 async function importRecipe(){
@@ -7868,7 +7968,8 @@ async function importRecipe(){
     save();
     showNewRecipe(nid);
   }catch(e){
-    importError=(e&&e.message&&e.message!=='0'?e.message+'. ':'')+'Your text is still in the box — try again, or switch the model in Chat.';
+    const msg=e&&e.message&&e.message!=='0'?String(e.message).trim():'';
+    importError=(msg?msg.replace(/[.!?]*$/,'')+'. ':'')+'Your text is still in the box — try again, or switch the model in Chat.';
     render();
   }
 }
@@ -9159,10 +9260,14 @@ function folderCode(id){
   const s=String(id||'').replace(/[^a-z0-9]/gi,'').slice(-5).toUpperCase()||'XXXXX';
   return 'CODE_///'+s;
 }
+const JUST_ADDED_MS=14*24*3600*1000;
 function archiveGroups(list){
   const sorted=[...(list||[])].sort((a,b)=>recipeTitle(a.name).localeCompare(recipeTitle(b.name),undefined,{sensitivity:'base'}));
   const useLetters=sorted.length>=6;
-  if(!useLetters)return[{letter:null,items:sorted}];
+  const now=Date.now();
+  const fresh=sorted.filter(r=>Number(r.addedAt)>0&&now-Number(r.addedAt)<JUST_ADDED_MS).sort((a,b)=>Number(b.addedAt)-Number(a.addedAt));
+  const top=fresh.length&&useLetters?[{letter:'Just added',fresh:true,items:fresh}]:[];
+  if(!useLetters)return[{letter:null,items:[...fresh,...sorted.filter(r=>!fresh.includes(r))]}];
   const map=new Map();
   sorted.forEach(r=>{
     const ch=(recipeTitle(r.name)||'?').trim().charAt(0).toUpperCase();
@@ -9170,7 +9275,7 @@ function archiveGroups(list){
     if(!map.has(L))map.set(L,[]);
     map.get(L).push(r);
   });
-  return [...map.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([letter,items])=>({letter,items}));
+  return [...top,...[...map.entries()].sort((a,b)=>a[0].localeCompare(b[0])).map(([letter,items])=>({letter,items}))];
 }
 function folderSheet(r){
   if(!r)return `<div class="folder-empty"><div class="hatch-label"><div style="font-size:28px;margin-bottom:8px">📂</div>No recipe open.<br><span class="mute">Flip a folder tab, or add one above.</span></div></div>`;
@@ -9543,8 +9648,8 @@ function cancelNewRecipe(){wipeIds(['ed-name','ed-ing','ed-notes','ed-steps','ed
 function saveNewRecipe(){
   captureLiveDrafts();
   const d=archiveEditDraft||{};
-  const name=recipeTitle(String(d.name||'').trim());
-  if(!name){showFieldError('ed-name','Give it a name');return}
+  const name=recipeTitle(String(d.name||'').trim()||String(d.funName||'').trim());
+  if(!name){showFieldError('ed-name','Give it a name');const f=document.getElementById('ed-name');if(f){f.scrollIntoView({block:'center',behavior:'smooth'});f.focus()}return}
   const ingRaw=String(d.ing||'').trim();
   const steps=cleanSteps(String(d.steps||'').split('\n').map(x=>x.trim()).filter(Boolean));
   const r={id:uid(),name,tags:canonicalTags(d.tags),ingredients:formatIngredientBlock(ingRaw),...(steps.length?{steps}:{})};
@@ -9553,7 +9658,7 @@ function saveNewRecipe(){
   const fn=String(d.funName||'').trim();if(fn)r.funName=fn;
   const so=String(d.source||'').trim();if(so)r.source=so;
   if(ingRaw){const parsed=itemsFromEditText(ingRaw);if(parsed.items.length){const ml=meatLbsFromItems(parsed.items);r.src={items:parsed.items,sections:parsed.sections,servings:null,meatLbs:ml,meatNote:''};if(ml)r.targetLbs=ml}}
-  S.recipes.unshift(r);
+  addRecipeFirst(r);
   if(d.myTags&&d.myTags.length){const m=myTagStore();m.on[r.id]=[...d.myTags];S.prefs.at=Date.now()}
   wipeIds(['ed-name','ed-ing','ed-notes','ed-steps','ed-fun-name','ed-source']);
   newEdit=false;archiveEditDraft=null;
@@ -9646,7 +9751,7 @@ function viewRecipes(){
   <button class="btn" type="button" onclick="addRecipe()">Save recipe</button>
   </div>`}</div>`;
   if(cookFilter==='meals')return tools+filterBar+savedMealsHtml(true);
-  return tools+classifyBannerHtml()+filterBar+archive+(newEdit?newRecipeSheetHtml():'');
+  return tools+(newEdit?newRecipeSheetHtml():'')+classifyBannerHtml()+filterBar+archive;
 }
 /** After adding a recipe: close the New recipe panel and show its card (read view) so it can be checked. */
 function showNewRecipe(nid){
@@ -9666,7 +9771,7 @@ function addRecipe(){
   if(!name){showFieldError('rn','Add a name');return}
   const nid=uid();
   const steps=cleanSteps(String(manualDraft.steps||'').split('\n').map(x=>x.trim()).filter(Boolean));
-  S.recipes.unshift({id:nid,name,tags:canonicalTags(manualDraft.tags),ingredients:formatIngredientBlock(String(manualDraft.ings||'').trim()),...(steps.length?{steps}:{}),...(manualDraft.spice!=null?{spice:Number(manualDraft.spice)}:{})});
+  addRecipeFirst({id:nid,name,tags:canonicalTags(manualDraft.tags),ingredients:formatIngredientBlock(String(manualDraft.ings||'').trim()),...(steps.length?{steps}:{}),...(manualDraft.spice!=null?{spice:Number(manualDraft.spice)}:{})});
   archiveOpenId=nid;
   wipeIds(['rn','rt','ri','rs']);
   manualDraft={name:'',tags:[],ings:'',steps:''};
@@ -9956,6 +10061,7 @@ function ctx(){
     recentlyCooked:[...S.log].filter(x=>x&&x.date).sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,10).map(x=>({name:x.name,date:x.date,rating:x.rating,note:x.note})),
     tagTaste:Object.fromEntries(Object.entries(aff).map(([t,v])=>[t,+(v+3).toFixed(1)])),
     preferences:(()=>{const p=prefs();return{rhythm:p.rhythm==='daily'?'cooks daily':'batch-cooks once a week',meals:p.meals,cookDays:p.days.map(d=>DAY_SHORT[d]),householdSize:p.household,proteinPerPerson:p.portion?`${p.portion.amt} ${p.portion.unit} (meat, fish or tofu)`:null,likes:p.like,avoids:p.avoid,diet:p.diet,time:p.time.length?p.time:null,adventure:p.adventure||null}})(),
+    mentioned:chatMentionedRecipes(),
     dailyPlan:w&&isDaily()?Object.fromEntries(plannedSlots(w).map(k=>[slotWhere(w,k),((w[k]&&w[k].items)||[]).map(ctxItemName).filter(Boolean)])):undefined};
 }
 function askNewChat(){
@@ -10028,19 +10134,92 @@ function viewChat(){
     if(m.error)return errStateHtml("Couldn't reach the assistant",m.content,`retryChat(${i})`,{art:{src:NO_SIGNAL_ART,w:329,h:367}});
     const match=m.role==='assistant'&&m.content.match(RX);
     const text=match?m.content.replace(RX,'').trim():m.content;
-    return `<div class="msg ${m.role}">${m.role==='assistant'?chatMarkdown(text):esc(text).replace(/\n/g,'<br>')}${match?`<div style="margin-top:8px"><button class="btn sm" onclick="saveChatRecipe(${i})">＋ Save recipe</button></div>`:''}</div>`}).join('');
+    return `<div class="msg ${m.role}">${m.role==='assistant'?chatMarkdown(text):chatUserHtml(m)}${match?`<div style="margin-top:8px"><button class="btn sm" onclick="saveChatRecipe(${i})">＋ Save recipe</button></div>`:''}</div>`}).join('');
   const history=chatSessions.slice().reverse().map(x=>`<div class="chat-history-row"><button type="button" class="chat-history-item${x.id===activeChatId?' on':''}" onclick="openChat('${esc(x.id)}')">${esc(x.title)}</button><button type="button" class="chat-history-delete" aria-label="Delete chat ${esc(x.title)}" onclick="deleteChat('${esc(x.id)}')">Delete</button></div>`).join('');
   const confirm=chatConfirmNew?`<div class="inline-confirm"><div class="mute" style="margin-bottom:8px">Start a new chat? This one stays in Recent chats.</div><div class="row"><button class="btn sm" type="button" onclick="confirmNewChat()">New chat</button><button class="btn sm ghost" type="button" onclick="cancelNewChat()">Cancel</button></div></div>`:'';
   const providers=[['groq','Groq'],['gemini','Gemini'],['standardcompute','StandardCompute']];
   const providerButtons=providers.map(([v,l])=>`<button type="button" class="btn sm provider-btn${chatProvider===v?' on':''}" aria-pressed="${chatProvider===v?'true':'false'}" onclick="setChatProvider('${v}')">${l}</button>`).join('');
-  return `<div class="card chat-shell"><div class="chat-toolbar"><button class="btn sm" type="button" onclick="newChat()">＋ New chat</button><span class="chat-active-title">${esc(chatTitle(chat))}</span>${chat.length?`<button class="btn sm ghost chat-del" type="button" onclick="deleteActiveChat()" aria-label="Delete this chat">Delete</button>`:''}</div><details class="chat-history"><summary>Recent chats (${chatSessions.length})</summary><div class="chat-history-list">${history||'<span class="mute">No saved chats yet.</span>'}</div></details><div class="chat-log" aria-live="polite">${msgs||'<div class="chat-empty mute">Start a conversation about your plan, a recipe swap, or meal prep.</div>'}${busy?'<div class="mute">Thinking…</div>':''}</div><div class="chat-provider-row"><span class="chat-provider-label">Model</span><div class="chat-provider-buttons" role="group" aria-label="Chat model">${providerButtons}</div></div><textarea id="ct" enterkeyhint="send" placeholder="Enter to send" oninput="chatText=this.value" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}">${esc(chatText)}</textarea><div class="row"><button class="btn grow" type="button" onclick="sendChat()" ${busy?'disabled':''}>Send</button><button class="btn ghost" type="button" onclick="askNewChat()" ${(busy||!chat.length)?'disabled':''}>New chat</button></div>${confirm}</div>`;
+  return `<div class="card chat-shell"><div class="chat-toolbar"><button class="btn sm" type="button" onclick="newChat()">＋ New chat</button><span class="chat-active-title">${esc(chatTitle(chat))}</span>${chat.length?`<button class="btn sm ghost chat-del" type="button" onclick="deleteActiveChat()" aria-label="Delete this chat">Delete</button>`:''}</div><details class="chat-history"><summary>Recent chats (${chatSessions.length})</summary><div class="chat-history-list">${history||'<span class="mute">No saved chats yet.</span>'}</div></details><div class="chat-log" aria-live="polite">${msgs||'<div class="chat-empty mute">Start a conversation about your plan, a recipe swap, or meal prep.</div>'}${busy?'<div class="mute">Thinking…</div>':''}</div><div class="chat-provider-row"><span class="chat-provider-label">Model</span><div class="chat-provider-buttons" role="group" aria-label="Chat model">${providerButtons}</div></div><textarea id="ct" enterkeyhint="send" placeholder="Ask anything · type @ to mention a recipe" oninput="chatText=this.value" onkeydown="if(mentionKey(event))return;if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}">${esc(chatText)}</textarea><div class="row"><button class="btn grow" type="button" onclick="sendChat()" ${busy?'disabled':''}>Send</button><button class="btn ghost" type="button" onclick="askNewChat()" ${(busy||!chat.length)?'disabled':''}>New chat</button></div>${confirm}</div>`;
 }
+/* ---------- chat: @-mention recipes so the assistant gets their full details ---------- */
+let mention=null; // {start, list:[recipes], i}
+function mentionNames(r){const a=[recipeDisplayTitle(r),r.name].filter(Boolean).map(String);return [...new Set(a)]}
+/** Recipe ids mentioned in a message as "@Name" or "@P-016" (longest names first, so "Chicken Pie" beats "Chicken"). */
+function chatMentionIds(text){
+  const t=String(text||'').toLowerCase(),out=[];
+  const cands=[];
+  S.recipes.forEach(r=>{if(!r)return;mentionNames(r).forEach(n=>cands.push({id:r.id,t:'@'+n.toLowerCase()}));const c=recipeCode(r);if(c)cands.push({id:r.id,t:'@'+String(c).toLowerCase()})});
+  cands.sort((a,b)=>b.t.length-a.t.length);
+  let rest=t;
+  cands.forEach(c=>{const i=rest.indexOf(c.t);if(i>=0){if(!out.includes(c.id))out.push(c.id);rest=rest.slice(0,i)+' '.repeat(c.t.length)+rest.slice(i+c.t.length)}});
+  return out;
+}
+/** Full details of recipes mentioned anywhere in this chat (newest first, up to 6). */
+function chatMentionedRecipes(){
+  const ids=[];for(let k=chat.length-1;k>=0;k--){(chat[k].refs||[]).forEach(id=>{if(!ids.includes(id))ids.push(id)})}
+  return ids.slice(0,6).map(id=>S.recipes.find(r=>r&&r.id===id)).filter(Boolean).map(r=>{const st=stats(r);return{
+    name:recipeDisplayTitle(r),realName:r.name,code:recipeCode(r)||undefined,tags:r.tags,servings:r.servings||undefined,
+    minutes:recipeMinutes(r)??undefined,heat:r.spice??undefined,ingredients:String(r.ingredients||''),steps:Array.isArray(r.steps)?r.steps:undefined,
+    notes:r.notes||undefined,source:r.source||undefined,timesCooked:st.n,avgRating:st.avg?+st.avg.toFixed(1):undefined,lastCooked:st.last||undefined}});
+}
+function chatOpenRecipe(id){setTab('Recipes');if(archiveOpenId!==id)openArchive(id)}
+/** A user message with its @mentions shown as chips that open the recipe. */
+function chatUserHtml(m){
+  let html=esc(m.content);
+  const refs=(m.refs||[]).map(id=>S.recipes.find(r=>r&&r.id===id)).filter(Boolean);
+  const names=[];refs.forEach(r=>{mentionNames(r).forEach(n=>names.push({id:r.id,n}));const c=recipeCode(r);if(c)names.push({id:r.id,n:String(c)})});
+  names.sort((a,b)=>b.n.length-a.n.length).forEach(x=>{
+    const needle='@'+esc(x.n);const i=html.toLowerCase().indexOf(needle.toLowerCase());
+    if(i>=0)html=html.slice(0,i)+`<button type="button" class="chat-ref" onclick="chatOpenRecipe('${esc(x.id)}')">${html.slice(i,i+needle.length)}</button>`+html.slice(i+needle.length);
+  });
+  return html.replace(/\n/g,'<br>');
+}
+function mentionClose(){mention=null;const m=document.getElementById('mentionMenu');if(m)m.remove()}
+function mentionUpdate(el){
+  const before=el.value.slice(0,el.selectionStart);
+  const m=/(^|\s)@([^\n@]{0,40})$/.exec(before);
+  if(!m){mentionClose();return}
+  const q=m[2].toLowerCase().trim();
+  const hit=r=>mentionNames(r).some(n=>n.toLowerCase().includes(q))||String(recipeCode(r)||'').toLowerCase().startsWith(q);
+  const starts=r=>mentionNames(r).some(n=>n.toLowerCase().startsWith(q))||String(recipeCode(r)||'').toLowerCase().startsWith(q);
+  const list=S.recipes.filter(r=>r&&r.name&&(!q||hit(r))).sort((a,b)=>(starts(b)-starts(a))||recipeDisplayTitle(a).localeCompare(recipeDisplayTitle(b))).slice(0,6);
+  if(!list.length){mentionClose();return}
+  mention={start:before.length-m[2].length-1,end:el.selectionStart,list,i:Math.min(mention&&mention.i||0,list.length-1)};
+  mentionRender(el);
+}
+function mentionRender(el){
+  let box=document.getElementById('mentionMenu');
+  if(!box){box=document.createElement('div');box.id='mentionMenu';box.className='mention-menu';box.setAttribute('role','listbox');box.setAttribute('aria-label','Recipes');document.body.appendChild(box)}
+  const r=el.getBoundingClientRect();
+  box.style.left=Math.max(8,r.left)+'px';box.style.width=Math.min(r.width,380)+'px';box.style.bottom=(window.innerHeight-r.top+6)+'px';
+  box.innerHTML=`<div class="mention-head">Mention a recipe</div>`+mention.list.map((x,k)=>{const c=recipeCode(x);return `<button type="button" role="option" aria-selected="${k===mention.i}" class="mention-opt${k===mention.i?' on':''}" onmousedown="event.preventDefault();mentionPick(${k})"><span>${esc(recipeDisplayTitle(x))}</span>${c?`<span class="mention-code">${esc(c)}</span>`:''}</button>`}).join('');
+}
+function mentionPick(k){
+  const el=document.getElementById('ct');if(!el||!mention)return;
+  const r=mention.list[k];if(!r)return;
+  const ins='@'+recipeDisplayTitle(r)+' ';
+  el.value=el.value.slice(0,mention.start)+ins+el.value.slice(mention.end);
+  const pos=mention.start+ins.length;chatText=el.value;mentionClose();
+  el.focus();el.setSelectionRange(pos,pos);
+}
+/** Arrow keys / Enter / Tab / Escape while the list is open. Returns true when it handled the key. */
+function mentionKey(e){
+  if(!mention)return false;
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();mention.i=(mention.i+(e.key==='ArrowDown'?1:-1)+mention.list.length)%mention.list.length;mentionRender(e.target);return true}
+  if(e.key==='Enter'||e.key==='Tab'){e.preventDefault();mentionPick(mention.i);return true}
+  if(e.key==='Escape'){e.preventDefault();mentionClose();return true}
+  return false;
+}
+document.addEventListener('input',e=>{if(e.target&&e.target.id==='ct')mentionUpdate(e.target)});
+document.addEventListener('click',e=>{if(mention&&e.target.id!=='ct'&&!e.target.closest('#mentionMenu'))mentionClose()});
+window.addEventListener('resize',()=>{const el=document.getElementById('ct');if(mention&&el)mentionRender(el)});
 async function sendChat(){
   captureLiveDrafts();
   const t=String(chatText||'').trim();
   if(!t||busy)return;
-  chat.push({role:'user',content:t});
-  chatSyncSession();
+  const refs=chatMentionIds(t);
+  chat.push(refs.length?{role:'user',content:t,refs}:{role:'user',content:t});
+  chatSyncSession();mentionClose();
   chatText='';
   const prev=$('#ct');if(prev)prev.value='';
   busy=true;
@@ -10077,7 +10256,7 @@ function retryChat(i){
 function saveChatRecipe(i){
   try{
     const m=chat[i].content.match(RX);const r=JSON.parse(m[1]);
-    const nid=uid();S.recipes.unshift({id:nid,name:recipeTitle(String(r.name||'Untitled')),tags:canonicalTags(r.tags),ingredients:formatIngredientBlock(Array.isArray(r.ingredients)?r.ingredients.join('\n'):String(r.ingredients||''))});
+    const nid=uid();addRecipeFirst({id:nid,name:recipeTitle(String(r.name||'Untitled')),tags:canonicalTags(r.tags),ingredients:formatIngredientBlock(Array.isArray(r.ingredients)?r.ingredients.join('\n'):String(r.ingredients||''))});
     pushReturn();
     archiveOpenId=nid;save();tab='Recipes';skipScrollRestore=true;render();
     window.scrollTo(0,0);
@@ -10495,6 +10674,7 @@ function ingredientBlockHtml(text){
 const taHeights={};
 function render(){
   refreshTagCanon();
+  if(mention)mentionClose();
   syncMeAvatar();
   if(archiveOpenId||planSheetId)loadSharedReviews();
   if(ensureRecipeCodes())save();
