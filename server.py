@@ -527,11 +527,11 @@ MODELS = {
     "standardcompute": os.environ.get("STANDARDCOMPUTE_MODEL", "standardcompute"),
 }
 SYSTEM = """You are a friendly meal-planning assistant inside the user's recipe app. Use their data below: favour recipes and tags they rate highly, avoid repeating meals cooked recently, and suggest variety. Be concise and practical; for meal prep, group tasks into one cook session and note storage times.
-When you propose a complete new recipe, end that reply with one fenced block exactly like:
+Only when your reply contains a complete recipe (a name, ingredients with amounts, and method steps), end that reply with one fenced block exactly like:
 ```recipe
-{"name": "...", "tags": ["chicken", "asian", "grain"], "ingredients": ["200g chicken", "1 tbsp olive oil"]}
+{"name": "...", "tags": ["chicken", "asian", "grain"], "servings": 4, "ingredients": ["200g chicken", "1 tbsp olive oil"], "steps": ["Sear the chicken.", "Add the sauce and simmer 10 minutes."]}
 ```
-so the app can save it. Put method steps in your normal text before the block. Use only these tags: """ + TAG_LIST
+so the app can save it. Write the method as a numbered list in your normal text before the block, and put the same steps in the block's "steps". Never add the block for ideas, lists of dishes, swaps, tips, or questions about an existing recipe. Use only these tags: """ + TAG_LIST
 
 IMPORT_SYSTEM = """You turn pasted recipe text (any messy source: web page, video description, notes) into JSON. If the text holds no actual recipe (for example it is only a link or a title), reply exactly {"error": "no recipe in text"} and never make one up. Reply with ONLY one JSON object, no prose, no code fences:
 {"name": str, "servings": number|null, "tags": [tags chosen ONLY from the allowed list below],
