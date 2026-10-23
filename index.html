@@ -3440,6 +3440,7 @@ body.onb-open{overflow:hidden}
 .msg-copy{padding:4px 8px;border:1px solid transparent;border-radius:6px;background:none;color:var(--mute);font:600 10px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;cursor:pointer}
 .msg-copy:hover,.msg-copy:focus-visible{color:var(--ink);border-color:var(--line);outline:none}
 .msg-copy.done{color:var(--ok)}
+.ing-collapse>.ingredient-list{border:1px solid var(--line);border-top:0;border-radius:0 0 var(--radius-sm) var(--radius-sm);background:var(--card);padding:12px 14px}
 </style>
 </head>
 <body>
@@ -5853,11 +5854,23 @@ function cookMeatTarget(){
   return t>0?t:3;
 }
 /** Apply cook-scale batch (~meatTarget lb) once. Keeps src originals; never overwrites batchCustom typed scaled. */
+/** Recipes stored as plain text (older chat saves, quick adds) get their ingredient breakdown the first
+    time they're opened, so they show US / Metric and scale by meat. Their text stays exactly as written. */
+function ensureRecipeBreakdown(r){
+  if(!r||(r.src&&Array.isArray(r.src.items)&&r.src.items.length))return false;
+  const text=String(r.ingredients||'').trim();if(!text)return false;
+  const parsed=itemsFromEditText(text);if(!parsed.items.length)return false;
+  const ml=meatLbsFromItems(parsed.items);
+  r.src={items:parsed.items,sections:parsed.sections,servings:Number(r.servings)||null,meatLbs:ml,meatNote:''};
+  if(ml){r.targetLbs=ml;r.batchCustom=true}
+  return true;
+}
 function ensureRecipeCookScale(r){
-  if(!r||!r.src||!Array.isArray(r.src.items)||!r.src.items.length)return false;
-  if(!(Number(r.src.meatLbs)>0))return false;
-  if(r.batchCustom)return false;
-  if(Number(r.targetLbs)>0&&String(r.ingredients||'').trim())return false;
+  const built=ensureRecipeBreakdown(r);
+  if(!r||!r.src||!Array.isArray(r.src.items)||!r.src.items.length)return built;
+  if(!(Number(r.src.meatLbs)>0))return built;
+  if(r.batchCustom)return built;
+  if(Number(r.targetLbs)>0&&String(r.ingredients||'').trim())return built;
   const target=cookMeatTarget();
   const src=srcForDisplayScale(r);
   const b=build(src,target);
@@ -6261,7 +6274,6 @@ function suggestPickerHtml(w,forSlot){
     <button type="button" class="btn sm btn-suggest" id="reqBtn" onclick="requestRecipes(false)">Suggest <span class="dial" aria-hidden="true"></span></button>
   </div>
   <div id="req-results">${reqResultsHtml(w,forSlot)}</div>
-  ${proteinBalanceHtml(w)}
   ${suggestDraft.note?`<div class="mute req-note">${esc(suggestDraft.note)}</div>`:''}
   <div class="req-grid">${cards}</div>
   <div class="row suggest-actions"><button type="button" class="btn ghost" onclick="keepSuggesting()">More suggestions</button>${forSlot?`<button type="button" class="btn ghost" onclick="openAddSheet('${forSlot}','new')">＋ New recipe…</button>`:`<button type="button" class="btn ghost" onclick="cancelSuggest()">Close</button>`}</div>
@@ -6317,6 +6329,10 @@ function groceryIngredientName(s){
   // Color can live in a "(red)" suffix from an earlier normalize pass; read it before stripping.
   const color=groceryColor(raw.replace(/,.*$/,''));
   let n=raw.replace(/\s*\([^)]*\)/g,'').replace(/,.*$/,'').replace(/\s+/g,' ').trim();
+  // Cooking notes aren't part of what you buy: "black beans with liquid", "chickpeas, drained and rinsed".
+  n=n.replace(/\s+with\s+(?:its\s+|their\s+|the\s+)?(?:liquid|juices?|brine)\b.*$/,'').replace(/\b(?:un)?drained(?:\s+and\s+rinsed)?\b|\brinsed(?:\s+and\s+drained)?\b/g,'').replace(/\s+/g,' ').trim();
+  // "water or broth" -> broth (nobody shops for water)
+  {const wo=n.match(/^(?:cold |warm |hot |boiling )?water or (.+)$/)||n.match(/^(.+?) or (?:cold |warm |hot |boiling )?water$/);if(wo)n=wo[1].trim()}
   if(/\bchicken\s+thighs?\b/.test(n))return 'chicken thighs';
   if(/\bchicken\s+breasts?\b/.test(n))return 'chicken breasts';
   if(/\b(chicken|turkey)\s+drumsticks?\b/.test(n))return n.match(/\bturkey\b/)?'turkey drumsticks':'chicken drumsticks';
@@ -6628,10 +6644,18 @@ function canonicalLooseIngredient(text, qtyRaw, unitRaw){
 function groceryKey(name,unit){
   return normGroceryName(name)+'|'+normGroceryUnit(unit);
 }
+/** Shopping-only tidy-up before amounts are read: "up to 1 cup …" -> "1 cup …",
+    "1 (15 oz) can black beans" -> "1 can black beans (15 oz)". The recipe text itself is untouched. */
+function groceryPrepLines(text){
+  return String(text||'').split('\n').map(l=>l
+    .replace(/^(\s*)(?:up to|about|approximately|approx\.?|roughly|around|scant|heaping|generous|a generous)\s+(?=\d|a\s|an\s|one\s)/i,'$1')
+    .replace(/^(\s*[\d\s/.½¼¾⅓⅔]+?)\s*\(([^)]*)\)\s*(cans?|jars?|packages?|pkgs?|boxes?|bags?|cartons?|bottles?|tins?|containers?|tubs?)\b\s*(.*)$/i,(m,q,size,u,rest)=>`${q.trim()} ${u} ${rest} (${size})`)
+  ).join('\n');
+}
 function recipeGroceryRows(r){
   if(!r)return[];
   // One row per line the sheet shows for this Original/Scaled view. That text is already the batch amount. Do not scale it again.
-  const text=usifyBlock(displayIngredients(r)||r.ingredients||'',{pieces:false});
+  const text=groceryPrepLines(usifyBlock(displayIngredients(r)||r.ingredients||'',{pieces:false}));
   return parseIngredientLines(text).map(i=>normalizeGroceryRow({qty:i.qty,unit:i.unit||'',name:i.item})).filter(x=>x&&x.name);
 }
 function looseGroceryRow(it){
@@ -6644,7 +6668,7 @@ function looseGroceryRow(it){
   return{qty:canon.qty,unit:canon.unit||'',name:canon.name};
 }
 const GROCERY_GROUP_ORDER=['meat','seafood','produce','dairy','bakery','pantry','other'];
-const GROCERY_GROUP_LABEL={meat:'Meat',seafood:'Seafood',produce:'Produce',dairy:'Dairy',bakery:'Bakery',pantry:'Pantry',other:'Other'};
+const GROCERY_GROUP_LABEL={meat:'Meat',seafood:'Seafood',produce:'Produce',dairy:'Dairy & eggs',bakery:'Bakery',pantry:'Pantry',other:'Other'};
 /**
  * Aisle from the ingredient name. First hit wins.
  * Bakery / dairy / pantry come before meat and produce so "potato bun",
@@ -6656,11 +6680,22 @@ function groceryGroup(name){
   if(!n)return 'other';
   if(/\b(breads?|buns?|tortillas?|rolls?|breadcrumbs?)\b/.test(n))return 'bakery';
   if(/\b(coconut\s+(milk|cream)|beans?|chickpeas?|lentils?|peanut\s+butter|powder|dried|seasoning|flakes)\b/.test(n)||/\bground\s+(ginger|cumin|cinnamon|coriander|nutmeg|cloves?|turmeric|allspice|black\s+pepper)\b/.test(n))return 'pantry';
-  if(/\b(cheeses?|creams?|milks?|butters?|yogh?urts?|parmesans?|parmigiano)\b/.test(n))return 'dairy';
+  // Fresh herbs and leafy greens are produce; egg noodles are pasta, not eggs.
+  if(/\bfresh\b/.test(n)&&/\b(thyme|rosemary|sage|oregano|dill|mint|tarragon|chives|marjoram|basil|parsley|cilantro|herbs?)\b/.test(n))return 'produce';
+  if(/\b(mustard|collard|turnip|beet|dandelion)\s+greens\b|\bgreens\b/.test(n))return 'produce';
+  if(/\begg\s+noodles?\b/.test(n))return 'pantry';
+  if(/\b(cheeses?|creams?|milks?|buttermilk|butters?|yogh?urts?|parmesans?|parmigiano|cheddar|mozzarella|feta|ricotta|gruyere|provolone|pecorino|mascarpone|brie|gouda|swiss|monterey jack|colby|half[- ]and[- ]half|ghee|kefir|eggs?|egg (?:whites?|yolks?))\b/.test(n))return 'dairy';
+  // Spices, baking, condiments, grains and pasta shapes: before produce, so "cayenne pepper" isn't a vegetable.
+  if(/\b(cayenne|paprika|cumin|oregano|thyme|rosemary|sage|basil leaves|dried basil|cinnamon|nutmeg|turmeric|cardamom|allspice|cloves|bay leaf|bay leaves|peppercorns?|coriander|fennel seeds?|mustard seeds?|chili powder|curry|garam masala|za'?atar|sumac|old bay|cajun|creole|italian seasoning|herbes de provence|salt|msg)\b/.test(n))return 'pantry';
+  if(/\b(baking (?:powder|soda)|yeast|cornstarch|corn starch|cocoa|chocolate|vanilla|extract|honey|maple syrup|molasses|agave|syrup|jam|jelly|preserves|mustard(?! greens)|dijon|ketchup|mayo(?:nnaise)?|relish|hot sauce|sriracha|worcestershire|soy sauce|tamari|fish sauce|tahini|pesto|salsa|olives?|capers?|pickles?|tomato paste|paste|cornmeal|polenta|grits|oats|oatmeal|quinoa|couscous|bulgur|farro|barley|orzo|macaroni|spaghetti|penne|rigatoni|ziti|fusilli|linguine|fettuccine|lasagna|noodles?|almonds?|walnuts?|pecans?|cashews?|peanuts?|pistachios?|pine nuts|sesame seeds?|chia|flax|raisins?|dates|dried cranberries|crackers|chips|panko)\b/.test(n))return 'pantry';
   if(/\b(pastas?|rices?|sauces?|oils?|vinegars?|wines?|stocks?|broths?|bouillons?|spices?|flours?|sugars?|cans?|canned|beans?)\b/.test(n))return 'pantry';
   if(SEAFOOD_RE.test(n)||/\banchov(?:y|ies)\b/.test(n))return 'seafood';
   if(/\b(chicken|turkey|poultry|ducks?|beef|pork|lamb|steaks?|sausages?|bacon|veal|bison|meats?|chucks?|briskets?|pancetta|guanciale|prosciutto|oxtails?|ribeyes?|short ribs?|hams?|pepperoni|thighs?|cutlets?)\b/.test(n))return 'meat';
   if(/\b(vegetables?|fruits?|herbs?|onions?|garlics?|peppers?|tomato(?:es)?|potato(?:es)?|lemons?|limes?|ginger|spinach|kale|lettuce|arugula|cabbage|broccoli|cauliflower|carrots?|celery|cucumbers?|zucchini|eggplants?|mushrooms?|shallots?|scallions?|cilantro|parsley|basil|dill|mint|avocados?|jalape[nñ]os?|corn)\b/.test(n))return 'produce';
+  if(/\b(clams?|mussels?|oysters?|scallops?|squid|calamari|octopus|crab|lobster|prawns?)\b/.test(n))return 'seafood';
+  if(/\b(round|sirloin|ribs?|chuck|loin|shoulder|roast|tenderloin|ground (?:beef|pork|turkey|chicken|lamb))\b/.test(n))return 'meat';
+  if(/\b(fennel|coleslaw|slaw|peas|corn|leeks?|radish(?:es)?|beets?|squash|pumpkin|asparagus|brussels|okra|artichokes?|sprouts|apples?|pears?|berries|bananas?|oranges?|grapes|mangos?|pineapple|avocados?)\b/.test(n)&&!/\b(hearts|canned|juice)\b/.test(n))return 'produce';
+  if(/\b(passata|juice|saffron|spray|cornflour|bicarb|sambal|puff pastry|phyllo|filo|pimientos?|pignoli|artichoke hearts|sun-?dried|anchovy paste|pappardelle|tagliatelle|paccheri|mafaldine|orecchiette|shells|farfalle|bucatini|gnocchi|ravioli|tortellini|cavatappi|campanelle|ditalini|vermicelli|angel hair|pastina|broth|stock|wine|brandy|ouzo|sherry|vermouth|beer|rum|bourbon|vodka|tequila|mirin|sake)\b/.test(n))return 'pantry';
   return 'other';
 }
 function groceryGroupRank(g){
@@ -6724,12 +6759,23 @@ function collectWeekGrocery(w){
       prev.qty=qty;
     }
   });
+  // Same item by weight and by volume (2 oz + 2 tbsp tomato paste): fold the volume into the weight when we
+  // know how much a cup of it weighs. Liquids and unknown foods stay as two lines rather than guessing.
+  map.forEach((vol,vk)=>{
+    if(!vk.endsWith('|vol')||vol.base==null)return;
+    const wt=map.get(vk.slice(0,-4)+'|wt');if(!wt||wt.base==null)return;
+    const gpc=gramsPerCup(vol.name);if(!(gpc>0))return;
+    wt.base+=vol.base/48*gpc;   // base is tsp for volume, grams for weight
+    wt.approx=true;map.delete(vk);
+  });
   map.forEach(row=>{
     if(row.base==null||!UNIT_FAMILY[row.unit])return;
     // Show the total in the biggest unit used that still reads as at least 1 (2 tbsp + 2 tsp → 2 2/3 tbsp).
     const units=row.units.filter(u=>UNIT_FAMILY[u]).sort((a,b)=>UNIT_FAMILY[b].x-UNIT_FAMILY[a].x);
     const u=units.find(x=>row.base/UNIT_FAMILY[x].x>=1)||units[units.length-1];
     row.unit=u;row.qty=Math.round(row.base/UNIT_FAMILY[u].x*1000)/1000;
+    // A converted total is an estimate: round it to something you'd buy (¼ oz / lb, 5 g).
+    if(row.approx){row.qty=u==='g'?Math.round(row.qty/5)*5||row.qty:Math.round(row.qty*4)/4||row.qty;delete row.approx}
     row.key=normGroceryName(row.name)+'|'+u;
     delete row.base;delete row.units;
   });
@@ -10084,7 +10130,9 @@ function saveCook(){
 
 /* ---------- chat ---------- */
 let chat=[],chatText='',busy=false;
-let chatProvider='groq';
+const CHAT_PROVIDERS=['groq','gemini','standardcompute'];
+/* The chat model you picked, remembered on this device. */
+let chatProvider=(()=>{try{const v=localStorage.getItem('mealplanner-chat-model');return CHAT_PROVIDERS.includes(v)?v:'groq'}catch(e){return 'groq'}})();
 let chatSessions=[],activeChatId='';
 const CHAT_SESSIONS_KEY='mealplanner-chat-sessions'+MP_SUFFIX;
 function chatSaveSessions(){try{localStorage.setItem(CHAT_SESSIONS_KEY,JSON.stringify(chatSessions.slice(-30)))}catch(e){}}
@@ -10124,8 +10172,9 @@ function deleteActiveChat(){
   if(activeChatId)deleteChat(activeChatId);else{chat=[];chatText='';render()}
 }
 function setChatProvider(provider){
-  if(!['groq','gemini','standardcompute'].includes(provider))return;
+  if(!CHAT_PROVIDERS.includes(provider))return;
   chatProvider=provider;
+  try{localStorage.setItem('mealplanner-chat-model',provider)}catch(e){}
   render();
 }
 const RX=/```recipe\s*([\s\S]*?)```/;
